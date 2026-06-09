@@ -121,11 +121,9 @@ public struct LabelRenderer {
         let sW = max(1, Int((CGFloat(cg.width) * CGFloat(H) / CGFloat(cg.height)).rounded()))
         guard let ctx = grayContext(sW, H) else { return nil }
         ctx.interpolationQuality = .high
-        // Flip so the top-down CGImage draws upright in the bottom-up context.
-        ctx.saveGState()
-        ctx.translateBy(x: 0, y: CGFloat(H)); ctx.scaleBy(x: 1, y: -1)
+        // readGray treats data row 0 as the top, matching CTLineDraw'd text, so
+        // draw the image without a CTM flip to keep it upright alongside text.
         ctx.draw(cg, in: CGRect(x: 0, y: 0, width: sW, height: H))
-        ctx.restoreGState()
         return cropHorizontally(readGray(ctx, sW, H))
     }
 
