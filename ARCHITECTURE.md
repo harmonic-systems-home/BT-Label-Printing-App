@@ -44,26 +44,36 @@ protocol PrinterTransport {
 - **iOS / iPadOS — `BLETransport` (CoreBluetooth).** `IOBluetooth` does **not**
   exist on iOS; see the open question below.
 
-### Bluetooth on iOS: the key open question
+### Bluetooth on iOS: resolved — iOS is blocked for now
 
 iOS apps **cannot** open a Bluetooth Classic / RFCOMM serial channel to an
 arbitrary device. The only two options are:
 
-1. **BLE (CoreBluetooth)** — works for any device that exposes a BLE GATT
-   service, no special enrollment. We'd discover the printer's service/
-   characteristic UUIDs and write the same protocol bytes to a characteristic.
+1. **BLE (CoreBluetooth)** — works for any device exposing a BLE GATT service,
+   no special enrollment.
 2. **MFi / External Accessory** — required for Classic SPP on iOS, and only works
-   if the *accessory* is enrolled in Apple's MFi program for your app. Not
-   feasible for a third party.
+   if the *accessory* is MFi‑licensed and the app declares the manufacturer's
+   protocol string. Not feasible for a third party without the manufacturer.
 
-**So iOS support hinges on whether the PT‑P300BT exposes a BLE interface.** The
-official Brother iOS app connects to this printer, so a phone‑reachable path
-exists — almost certainly BLE. **Action item before committing to the iOS
-target:** scan the powered‑on printer with a BLE explorer (e.g. *LightBlue* /
-*nRF Connect*) and record its service + writable/notify characteristic UUIDs and
-MTU. If BLE is confirmed, `BLETransport` is straightforward and the protocol/
-rendering/UI layers above it are 100% shared. (BLE could even be used on macOS
-too, unifying the transport — worth evaluating.)
+**Finding (2026‑06, empirical):** the PT‑P300BT is **Bluetooth Classic (SPP)
+only — it does not expose a BLE interface.**
+
+- On macOS it connects via an IOBluetooth **RFCOMM** channel using SDP UUID
+  `0x1101` (Serial Port Profile) and appears in the Classic paired‑devices list.
+- Two CoreBluetooth scans (including one right after a power‑cycle, showing all
+  named *and* unnamed advertisers) found **no printer** — a device sitting next
+  to the Mac would advertise at ~−50 dBm; nothing matched.
+- Brother's published spec lists only "Interface: Bluetooth" (no version/profile).
+
+**Consequence:** there is no BLE path on iOS, and Classic SPP on iOS needs MFi
+with Brother's protocol string (how Brother's own iOS app connects). A
+third‑party iOS/iPadOS build is therefore **not feasible without Brother's
+involvement.** 
+
+**Strategy:** ship **macOS first**. Keep the protocol, rendering, data, and UI
+layers fully cross‑platform so the app is only a `BLETransport`/`EATransport`
+away from iOS if a path ever opens (Brother/MFi cooperation, or a future
+BLE‑capable P‑touch model). Do **not** invest in iOS‑specific transport now.
 
 ## 2. Protocol layer (clean‑room, shared)
 
@@ -127,8 +137,10 @@ compiled per‑platform via `#if os(macOS)` / `#if os(iOS)`.
 
 ## Open questions / next steps
 
-1. **Confirm the PT‑P300BT's BLE interface** (service + characteristic UUIDs).
-   This gates the entire iOS/iPadOS target.
-2. Decide whether to use BLE on macOS too (one transport) or keep RFCOMM there.
-3. Tape‑size support beyond 12 mm (issue parity with the CLI's assumptions).
-4. App Store: iCloud container + entitlements; branding review (no Brother marks).
+1. ~~Confirm the PT‑P300BT's BLE interface.~~ **Resolved: no BLE (Classic SPP
+   only) — iOS blocked for third parties. macOS‑first.** (See above.)
+2. Build the macOS `RFCOMMTransport` from the validated approach; wrap the
+   clean‑room protocol + rendering behind it.
+3. Tape‑size support beyond 12 mm (parity with the CLI's 12 mm assumption).
+4. App Store: iCloud container + entitlements; branding review (no Brother marks);
+   PolyForm Perimeter license noted in the listing.

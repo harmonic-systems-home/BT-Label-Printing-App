@@ -29,10 +29,10 @@ layer, and UI are being built out. See [ARCHITECTURE.md](ARCHITECTURE.md).
 
 ## Platforms
 
-| Platform | Bluetooth path | Notes |
+| Platform | Bluetooth path | Status |
 |---|---|---|
-| macOS 13+ | IOBluetooth RFCOMM (Bluetooth Classic / SPP) | Validated, reliable |
-| iPadOS / iOS 16+ | CoreBluetooth (BLE) — **pending hardware confirmation** | See the transport caveat in [ARCHITECTURE.md](ARCHITECTURE.md#bluetooth-on-ios-the-key-open-question) |
+| **macOS 13+** | IOBluetooth RFCOMM (Bluetooth Classic / SPP) | ✅ Validated, reliable — primary target |
+| iPadOS / iOS 16+ | — | 🔴 Blocked: the PT‑P300BT has **no BLE interface** (Classic SPP only), and iOS Classic SPP needs MFi. See [ARCHITECTURE.md](ARCHITECTURE.md#bluetooth-on-ios-resolved--ios-is-blocked-for-now). Shared layers stay cross‑platform so iOS is "transport‑away" if a path opens. |
 
 ## Supported hardware
 
