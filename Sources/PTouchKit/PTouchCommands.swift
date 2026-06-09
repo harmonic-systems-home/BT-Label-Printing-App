@@ -29,8 +29,9 @@ public enum PTouchCommand {
                                         lengthMM: UInt8 = 0,
                                         rasterLines: Int,
                                         firstPage: Bool = true) -> [UInt8] {
-        // Validity flags: media type | media width | media length present.
-        let flags: UInt8 = 0x02 | 0x04 | 0x08
+        // Validity flags: width | quality | recovery (PI_WIDTH 0x04 |
+        // PI_QUALITY 0x40 | PI_RECOVER 0x80), matching the known-good sequence.
+        let flags: UInt8 = 0x04 | 0x40 | 0x80
         let n = UInt32(rasterLines)
         return [0x1B, 0x69, 0x7A,
                 flags, mediaType, widthMM, lengthMM,

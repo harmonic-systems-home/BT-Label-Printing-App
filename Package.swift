@@ -7,6 +7,7 @@ let package = Package(
     products: [
         .library(name: "PTouchKit", targets: ["PTouchKit"]),
         .executable(name: "ptsmoke", targets: ["ptsmoke"]),
+        .executable(name: "ptprint", targets: ["ptprint"]),
     ],
     targets: [
         .target(
@@ -18,6 +19,10 @@ let package = Package(
         ),
         .executableTarget(
             name: "ptsmoke",
+            dependencies: ["PTouchKit"]
+        ),
+        .executableTarget(
+            name: "ptprint",
             dependencies: ["PTouchKit"]
         ),
         .testTarget(

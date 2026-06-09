@@ -46,9 +46,10 @@ Requires Xcode 16+ / Swift 6 on macOS. The reusable core lives in the
 the SwiftUI app target is added on top in Xcode.
 
 ```bash
-swift build          # build the package
-swift test           # run protocol/raster unit tests
-swift run ptsmoke    # connect to the printer over Bluetooth and read live status
+swift build              # build the package
+swift test               # run protocol/raster unit tests
+swift run ptsmoke        # connect over Bluetooth and read live status
+swift run ptprint "Hi"   # render text and print a real label, end-to-end
 ```
 
 `ptsmoke` is a connectivity smoke test — it pairs with the printer (`bt` name
