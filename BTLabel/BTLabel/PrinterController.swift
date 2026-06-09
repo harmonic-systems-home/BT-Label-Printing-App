@@ -2,6 +2,8 @@ import Foundation
 import SwiftUI
 import Combine
 import CoreGraphics
+import AppKit
+import UniformTypeIdentifiers
 import PTouchKit
 
 /// A saved label design.
@@ -9,6 +11,8 @@ struct LabelFavorite: Identifiable, Hashable, Codable {
     var id = UUID()
     var text: String
     var fontName: String
+    var sizing: SizingMode = .fitText
+    var imagePath: String?
 }
 
 /// Bridges the SwiftUI UI to PTouchKit. Bluetooth work runs on a dedicated
@@ -26,12 +30,18 @@ final class PrinterController: ObservableObject {
     // Editor state
     @Published var text = "Hello"
     @Published var fontName = "Helvetica"
+    @Published var sizing: SizingMode = .fitText
+    @Published var imageURL: URL?
+    @Published var mergeGap: Int = 24
     @Published var favorites: [LabelFavorite] = []
 
     private let renderer = LabelRenderer()
 
-    /// Live preview image + raster rows for the current text/font.
-    var rendered: RenderedLabel? { renderer.render(text: text, fontName: fontName) }
+    /// Live preview image + raster rows for the current text/font/image.
+    var rendered: RenderedLabel? {
+        renderer.render(text: text, fontName: fontName, sizing: sizing,
+                        imageURL: imageURL, mergeGapDots: mergeGap)
+    }
 
     var isBusy: Bool { activity == .working }
 
@@ -54,11 +64,25 @@ final class PrinterController: ObservableObject {
     }
 
     func saveFavorite() {
-        guard !text.isEmpty else { return }
-        favorites.insert(LabelFavorite(text: text, fontName: fontName), at: 0)
+        guard !text.isEmpty || imageURL != nil else { return }
+        favorites.insert(LabelFavorite(text: text, fontName: fontName, sizing: sizing,
+                                       imagePath: imageURL?.path), at: 0)
     }
 
-    func load(_ fav: LabelFavorite) { text = fav.text; fontName = fav.fontName }
+    func load(_ fav: LabelFavorite) {
+        text = fav.text; fontName = fav.fontName; sizing = fav.sizing
+        imageURL = fav.imagePath.map { URL(fileURLWithPath: $0) }
+    }
+
+    func pickImage() {
+        let panel = NSOpenPanel()
+        panel.allowedContentTypes = [.png, .jpeg, .pdf]
+        panel.allowsMultipleSelection = false
+        panel.canChooseDirectories = false
+        if panel.runModal() == .OK { imageURL = panel.url }
+    }
+
+    func clearImage() { imageURL = nil }
 
     // MARK: - Bluetooth plumbing
 

@@ -83,10 +83,38 @@ struct EditorPanel: View {
                         .overlay(RoundedRectangle(cornerRadius: 4).stroke(.secondary.opacity(0.3)))
                     Text("Use Return for a second line — the font shrinks to fit.")
                         .font(.caption2).foregroundStyle(.secondary)
-                    Picker("Font", selection: $c.fontName) {
-                        ForEach(fontChoices, id: \.self) { Text($0).tag($0) }
+                    HStack {
+                        Picker("Font", selection: $c.fontName) {
+                            ForEach(fontChoices, id: \.self) { Text($0).tag($0) }
+                        }
+                        .frame(maxWidth: 220)
+                        Picker("Size", selection: $c.sizing) {
+                            Text("Fit text").tag(SizingMode.fitText)
+                            Text("Consistent").tag(SizingMode.capHeight)
+                        }
+                        .frame(maxWidth: 190)
                     }
-                    .frame(maxWidth: 280)
+                }
+                .padding(6)
+            }
+
+            GroupBox("Image") {
+                HStack(spacing: 12) {
+                    Button { c.pickImage() } label: { Label("Add Image…", systemImage: "photo") }
+                    if let url = c.imageURL {
+                        Text(url.lastPathComponent).lineLimit(1).truncationMode(.middle)
+                            .foregroundStyle(.secondary)
+                        Button(role: .destructive) { c.clearImage() } label: {
+                            Image(systemName: "xmark.circle.fill")
+                        }.buttonStyle(.borderless)
+                        Spacer()
+                        Stepper("Gap \(c.mergeGap)", value: $c.mergeGap, in: 0...80, step: 4)
+                            .frame(maxWidth: 150)
+                    } else {
+                        Text("PNG, JPEG, or single-page PDF — placed before the text.")
+                            .font(.caption2).foregroundStyle(.secondary)
+                        Spacer()
+                    }
                 }
                 .padding(6)
             }

@@ -71,9 +71,26 @@ third‑party iOS/iPadOS build is therefore **not feasible without Brother's
 involvement.** 
 
 **Strategy:** ship **macOS first**. Keep the protocol, rendering, data, and UI
-layers fully cross‑platform so the app is only a `BLETransport`/`EATransport`
-away from iOS if a path ever opens (Brother/MFi cooperation, or a future
-BLE‑capable P‑touch model). Do **not** invest in iOS‑specific transport now.
+layers fully cross‑platform so the app is only a transport away from iOS. Do
+**not** invest in a direct iOS Bluetooth transport.
+
+### The viable iOS path: Mac as a print relay
+
+Because the iOS app can reuse PTouchKit's renderer (CoreText/CoreGraphics work on
+iOS) to produce the platform‑agnostic raster `rows`, the only thing it can't do
+is the final Bluetooth hop. So the iPhone/iPad app **renders locally and sends
+the raster job to the Mac**, which performs `PrintJob` over `RFCOMMTransport`:
+
+- **Transport:** Bonjour/local‑network (`NWListener`/`NWBrowser`) for instant
+  same‑Wi‑Fi printing; an optional CloudKit relay later for "print when away"
+  (requires the Mac awake). 
+- **Mac side:** a small `PrintRelayService` in the Mac app that advertises over
+  Bonjour, accepts a job (rows + tape expectations), and prints.
+- **iOS side:** the same editor/preview UI; "Print" sends the job to a discovered
+  Mac instead of a local transport.
+
+This sidesteps the MFi/BLE wall entirely. It's a sizable milestone (networking +
+a second app target) and comes after the macOS app's core is solid.
 
 ## 2. Protocol layer (clean‑room, shared)
 

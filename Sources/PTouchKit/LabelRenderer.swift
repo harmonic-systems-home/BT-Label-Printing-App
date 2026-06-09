@@ -2,27 +2,31 @@
 import Foundation
 import CoreGraphics
 import CoreText
+import ImageIO
 
-/// A rendered label: the printer raster rows plus a readable preview image.
+/// How text is sized to the printable height.
+public enum SizingMode: String, Sendable, CaseIterable, Codable {
+    /// Largest size that fits this specific text's ink (fills the tape; default).
+    case fitText
+    /// Consistent cap-height sizing regardless of the specific glyphs.
+    case capHeight
+}
+
+/// A rendered label: printer raster rows plus a readable preview image.
 public struct RenderedLabel {
-    /// Raster lines in tape-feed order (each `bufferWidth/8` bytes, MSB-first, bit 1 = black).
     public let rows: [[UInt8]]
-    /// Readable label image (black on white, length × printableHeight) for on-screen preview.
     public let preview: CGImage
     public var lengthDots: Int { rows.count }
 }
 
-/// Renders text to printer raster rows for a PT‑P300BT‑class device.
-///
-/// The print head is `bufferWidth` dots across (128); only the centre
-/// `printableHeight` dots (64 ≈ 9 mm on 12 mm tape) actually print. A label of
-/// length L dots is L raster lines; the text's columns become raster lines and
-/// its rows map onto the centred dot band (the known-good transpose pipeline).
+/// Renders text (and an optional leading image/PDF) to printer raster rows for a
+/// PT‑P300BT‑class device. Print head = `bufferWidth` dots (128); only the centre
+/// `printableHeight` dots (64 ≈ 9 mm) print.
 public struct LabelRenderer {
     public var printableHeight: Int
     public var bufferWidth: Int
-    public var flipLength: Bool       // reverse line order (mirror along length)
-    public var flipWidth: Bool        // reverse dots (flip across width)
+    public var flipLength: Bool
+    public var flipWidth: Bool
 
     public init(printableHeight: Int = 64, bufferWidth: Int = 128,
                 flipLength: Bool = false, flipWidth: Bool = false) {
@@ -32,15 +36,40 @@ public struct LabelRenderer {
         self.flipWidth = flipWidth
     }
 
-    /// Render one or more lines of text (`\n` separates lines; literal "\\n" is
-    /// also accepted). Returns nil only if a drawing context can't be created.
-    public func render(text: String, fontName: String = "Helvetica",
-                       sideMarginDots: Int = 12, lineSpacing: CGFloat = 1.12,
+    /// Grayscale bitmap, row-major, row 0 = top, 0 = black … 255 = white.
+    private struct Gray { var width: Int; var height: Int; var px: [UInt8] }
+
+    public func render(text: String,
+                       fontName: String = "Helvetica",
+                       sizing: SizingMode = .fitText,
+                       imageURL: URL? = nil,
+                       mergeGapDots: Int = 24,
+                       sideMarginDots: Int = 12,
+                       lineSpacing: CGFloat = 1.12,
                        fillFraction: CGFloat = 0.95) -> RenderedLabel? {
         let H = printableHeight
+        var parts: [Gray] = []
+        if let url = imageURL, let img = loadImageGray(url, height: H) { parts.append(img) }
         let normalized = text.replacingOccurrences(of: "\\n", with: "\n")
-        let lines = normalized.components(separatedBy: "\n")
-        func makeLine(_ s: String, _ font: CTFont) -> CTLine {
+        if !normalized.isEmpty,
+           let t = textGray(normalized, fontName: fontName, sizing: sizing,
+                            lineSpacing: lineSpacing, fillFraction: fillFraction,
+                            sideMarginDots: sideMarginDots) {
+            parts.append(t)
+        }
+        guard !parts.isEmpty else { return nil }
+        return rasterize(compose(parts, gap: mergeGapDots, height: H))
+    }
+
+    // MARK: - Text
+
+    private func textGray(_ text: String, fontName: String, sizing: SizingMode,
+                          lineSpacing: CGFloat, fillFraction: CGFloat,
+                          sideMarginDots: Int) -> Gray? {
+        let H = printableHeight
+        let lines = text.components(separatedBy: "\n")
+
+        func line(_ s: String, _ font: CTFont) -> CTLine {
             let attrs: [NSAttributedString.Key: Any] = [
                 .init(rawValue: kCTFontAttributeName as String): font,
                 .init(rawValue: kCTForegroundColorAttributeName as String): CGColor(gray: 0, alpha: 1),
@@ -49,69 +78,139 @@ public struct LabelRenderer {
                 NSAttributedString(string: s, attributes: attrs) as CFAttributedString)
         }
 
-        // Size by the actual glyph *ink* bounds (not the font's nominal line
-        // box) so the text fills the printable height consistently across fonts,
-        // which vary a lot in internal leading. Probe at a reference size, then
-        // scale linearly.
         let S0: CGFloat = 100
-        let probeFont = CTFontCreateWithName(fontName as CFString, S0, nil)
-        let step0 = (CTFontGetAscent(probeFont) + CTFontGetDescent(probeFont)) * lineSpacing
-        var inkTop0 = -CGFloat.greatestFiniteMagnitude
-        var inkBot0 = CGFloat.greatestFiniteMagnitude
+        let probe = CTFontCreateWithName(fontName as CFString, S0, nil)
+        let asc = CTFontGetAscent(probe), desc = CTFontGetDescent(probe)
+        let cap = CTFontGetCapHeight(probe)
+        let step0 = (asc + desc) * lineSpacing
+        var top0 = -CGFloat.greatestFiniteMagnitude, bot0 = CGFloat.greatestFiniteMagnitude
         for (k, s) in lines.enumerated() {
-            let b = CTLineGetBoundsWithOptions(makeLine(s, probeFont), .useGlyphPathBounds)
-            guard !b.isNull, b.height > 0 else { continue }
             let baseline = -CGFloat(k) * step0
-            inkTop0 = max(inkTop0, baseline + b.maxY)
-            inkBot0 = min(inkBot0, baseline + b.minY)
+            switch sizing {
+            case .capHeight:
+                top0 = max(top0, baseline + cap); bot0 = min(bot0, baseline - desc)
+            case .fitText:
+                let b = CTLineGetBoundsWithOptions(line(s, probe), .useGlyphPathBounds)
+                guard !b.isNull, b.height > 0 else { continue }
+                top0 = max(top0, baseline + b.maxY); bot0 = min(bot0, baseline + b.minY)
+            }
         }
-        if inkTop0 < inkBot0 {                       // all-empty fallback
-            inkTop0 = CTFontGetAscent(probeFont); inkBot0 = -CTFontGetDescent(probeFont)
-        }
-        let scale = (CGFloat(H) * fillFraction) / max(1, inkTop0 - inkBot0)
-        let size = S0 * scale
+        if top0 < bot0 { top0 = cap; bot0 = -desc }
+        let scale = (CGFloat(H) * fillFraction) / max(1, top0 - bot0)
         let step = step0 * scale
-
-        let font = CTFontCreateWithName(fontName as CFString, size, nil)
-        let realLines: [(CTLine, CGFloat)] = lines.map { s in
-            let l = makeLine(s, font)
-            return (l, CGFloat(CTLineGetTypographicBounds(l, nil, nil, nil)))
+        let font = CTFontCreateWithName(fontName as CFString, S0 * scale, nil)
+        let real: [(CTLine, CGFloat)] = lines.map {
+            let l = line($0, font); return (l, CGFloat(CTLineGetTypographicBounds(l, nil, nil, nil)))
         }
-        let maxWidth = realLines.map(\.1).max() ?? 0
-        let W = max(1, Int(maxWidth.rounded(.up)) + 2 * sideMarginDots)
-
-        let cs = CGColorSpaceCreateDeviceGray()
-        guard let ctx = CGContext(data: nil, width: W, height: H, bitsPerComponent: 8,
-                                  bytesPerRow: 0, space: cs,
-                                  bitmapInfo: CGImageAlphaInfo.none.rawValue) else { return nil }
-        ctx.setFillColor(gray: 1, alpha: 1)
-        ctx.fill(CGRect(x: 0, y: 0, width: W, height: H))
-
-        // Centre the ink block vertically (CG y is up).
-        let baseline0 = CGFloat(H) / 2 - (inkTop0 + inkBot0) / 2 * scale
-        for (k, (line, lineWidth)) in realLines.enumerated() {
-            ctx.textPosition = CGPoint(x: (CGFloat(W) - lineWidth) / 2,
-                                       y: baseline0 - CGFloat(k) * step)
-            CTLineDraw(line, ctx)
+        let W = max(1, Int((real.map(\.1).max() ?? 0).rounded(.up)) + 2 * sideMarginDots)
+        guard let ctx = grayContext(W, H) else { return nil }
+        let baseline0 = CGFloat(H) / 2 - (top0 + bot0) / 2 * scale
+        for (k, (l, w)) in real.enumerated() {
+            ctx.textPosition = CGPoint(x: (CGFloat(W) - w) / 2, y: baseline0 - CGFloat(k) * step)
+            CTLineDraw(l, ctx)
         }
+        return readGray(ctx, W, H)
+    }
 
-        guard let preview = ctx.makeImage(), let data = ctx.data else { return nil }
+    // MARK: - Image / PDF
+
+    private func loadImageGray(_ url: URL, height H: Int) -> Gray? {
+        if url.pathExtension.lowercased() == "pdf" { return loadPDFGray(url, height: H) }
+        guard let src = CGImageSourceCreateWithURL(url as CFURL, nil),
+              let cg = CGImageSourceCreateImageAtIndex(src, 0, nil) else { return nil }
+        let sW = max(1, Int((CGFloat(cg.width) * CGFloat(H) / CGFloat(cg.height)).rounded()))
+        guard let ctx = grayContext(sW, H) else { return nil }
+        ctx.interpolationQuality = .high
+        // Flip so the top-down CGImage draws upright in the bottom-up context.
+        ctx.saveGState()
+        ctx.translateBy(x: 0, y: CGFloat(H)); ctx.scaleBy(x: 1, y: -1)
+        ctx.draw(cg, in: CGRect(x: 0, y: 0, width: sW, height: H))
+        ctx.restoreGState()
+        return cropHorizontally(readGray(ctx, sW, H))
+    }
+
+    private func loadPDFGray(_ url: URL, height H: Int) -> Gray? {
+        guard let doc = CGPDFDocument(url as CFURL), let page = doc.page(at: 1) else { return nil }
+        let box = page.getBoxRect(.mediaBox)
+        guard box.height > 0 else { return nil }
+        let scale = CGFloat(H) / box.height
+        let sW = max(1, Int((box.width * scale).rounded()))
+        guard let ctx = grayContext(sW, H) else { return nil }
+        ctx.saveGState()
+        ctx.scaleBy(x: scale, y: scale)
+        ctx.translateBy(x: -box.minX, y: -box.minY)
+        ctx.drawPDFPage(page)               // PDF is y-up: draws upright already
+        ctx.restoreGState()
+        return cropHorizontally(readGray(ctx, sW, H))
+    }
+
+    /// Trim left/right whitespace columns so the merge gap is consistent.
+    private func cropHorizontally(_ g: Gray, threshold: UInt8 = 200) -> Gray {
+        var lo = g.width, hi = -1
+        for c in 0..<g.width {
+            var dark = false
+            for r in 0..<g.height where g.px[r * g.width + c] < threshold { dark = true; break }
+            if dark { lo = min(lo, c); hi = max(hi, c) }
+        }
+        guard hi >= lo else { return g }
+        let w = hi - lo + 1
+        var px = [UInt8](repeating: 255, count: w * g.height)
+        for r in 0..<g.height { for c in 0..<w { px[r * w + c] = g.px[r * g.width + (lo + c)] } }
+        return Gray(width: w, height: g.height, px: px)
+    }
+
+    // MARK: - Compose + rasterize
+
+    private func compose(_ parts: [Gray], gap: Int, height H: Int) -> Gray {
+        let total = parts.map(\.width).reduce(0, +) + gap * max(0, parts.count - 1)
+        var px = [UInt8](repeating: 255, count: total * H)
+        var x = 0
+        for (i, p) in parts.enumerated() {
+            for r in 0..<H { for c in 0..<p.width { px[r * total + (x + c)] = p.px[r * p.width + c] } }
+            x += p.width + (i < parts.count - 1 ? gap : 0)
+        }
+        return Gray(width: max(1, total), height: H, px: px)
+    }
+
+    private func rasterize(_ g: Gray) -> RenderedLabel? {
+        let H = g.height
+        guard let ctx = grayContext(g.width, H), let data = ctx.data else { return nil }
         let ptr = data.bindMemory(to: UInt8.self, capacity: ctx.bytesPerRow * H)
-        let bpr = ctx.bytesPerRow
+        for r in 0..<H { for c in 0..<g.width { ptr[r * ctx.bytesPerRow + c] = g.px[r * g.width + c] } }
+        guard let preview = ctx.makeImage() else { return nil }
+
         let bytesPerRow = bufferWidth / 8
         let offset = (bufferWidth - H) / 2
-
         var rows: [[UInt8]] = []
-        rows.reserveCapacity(W)
-        for col in 0..<W {
+        rows.reserveCapacity(g.width)
+        for col in 0..<g.width {
             var lineBytes = [UInt8](repeating: 0, count: bytesPerRow)
-            for r in 0..<H where ptr[r * bpr + col] < 128 {        // dark pixel -> print
+            for r in 0..<H where g.px[r * g.width + col] < 128 {
                 let dot = offset + (flipWidth ? (H - 1 - r) : r)
                 lineBytes[dot / 8] |= (0x80 >> (dot % 8))
             }
             rows.append(lineBytes)
         }
         return RenderedLabel(rows: flipLength ? rows.reversed() : rows, preview: preview)
+    }
+
+    // MARK: - Helpers
+
+    private func grayContext(_ w: Int, _ h: Int) -> CGContext? {
+        guard let ctx = CGContext(data: nil, width: w, height: h, bitsPerComponent: 8,
+                                  bytesPerRow: 0, space: CGColorSpaceCreateDeviceGray(),
+                                  bitmapInfo: CGImageAlphaInfo.none.rawValue) else { return nil }
+        ctx.setFillColor(gray: 1, alpha: 1)
+        ctx.fill(CGRect(x: 0, y: 0, width: w, height: h))
+        return ctx
+    }
+
+    private func readGray(_ ctx: CGContext, _ w: Int, _ h: Int) -> Gray {
+        let bpr = ctx.bytesPerRow
+        let ptr = ctx.data!.bindMemory(to: UInt8.self, capacity: bpr * h)
+        var px = [UInt8](repeating: 255, count: w * h)
+        for r in 0..<h { for c in 0..<w { px[r * w + c] = ptr[r * bpr + c] } }
+        return Gray(width: w, height: h, px: px)
     }
 }
 #endif

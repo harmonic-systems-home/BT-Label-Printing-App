@@ -14,7 +14,8 @@ import UniformTypeIdentifiers
 
 var args = Array(CommandLine.arguments.dropFirst())
 var flipLength = false, flipWidth = false, name = "PT-P300", font = "Helvetica"
-var previewPath: String?
+var previewPath: String?, imagePath: String?
+var sizing: SizingMode = .fitText
 var text = "Hello from Swift"
 var sawText = false
 var i = 0
@@ -25,6 +26,8 @@ while i < args.count {
     case "--name": i += 1; if i < args.count { name = args[i] }
     case "--font": i += 1; if i < args.count { font = args[i] }
     case "--preview": i += 1; if i < args.count { previewPath = args[i] }
+    case "--image": i += 1; if i < args.count { imagePath = args[i] }
+    case "--sizing": i += 1; if i < args.count { sizing = args[i] == "cap" ? .capHeight : .fitText }
     default: if !sawText { text = args[i]; sawText = true }
     }
     i += 1
@@ -33,7 +36,8 @@ while i < args.count {
 func err(_ s: String) { FileHandle.standardError.write((s + "\n").data(using: .utf8)!) }
 
 let renderer = LabelRenderer(flipLength: flipLength, flipWidth: flipWidth)
-guard let rendered = renderer.render(text: text, fontName: font) else {
+let imageURL = imagePath.map { URL(fileURLWithPath: $0) }
+guard let rendered = renderer.render(text: text, fontName: font, sizing: sizing, imageURL: imageURL) else {
     err("** Failed to render text."); exit(3)
 }
 let rows = rendered.rows
