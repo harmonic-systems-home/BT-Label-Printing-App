@@ -36,7 +36,10 @@ do {
     }
 
     let renderer = LabelRenderer(flipLength: flipLength, flipWidth: flipWidth)
-    let rows = renderer.render(text: text)
+    guard let rendered = renderer.render(text: text) else {
+        err("** Failed to render text."); transport.disconnect(); exit(3)
+    }
+    let rows = rendered.rows
     err("Rendering \"\(text)\" -> \(rows.count) raster lines (~\(String(format: "%.1f", Double(rows.count) * 0.149 / 10)) cm).")
 
     let result = try PrintJob.send(rows: rows, status: status, to: transport)
