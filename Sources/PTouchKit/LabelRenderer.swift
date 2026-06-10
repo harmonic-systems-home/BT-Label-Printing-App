@@ -3,14 +3,7 @@ import Foundation
 import CoreGraphics
 import CoreText
 import ImageIO
-
-/// How text is sized to the printable height.
-public enum SizingMode: String, Sendable, CaseIterable, Codable {
-    /// Largest size that fits this specific text's ink (fills the tape; default).
-    case fitText
-    /// Consistent cap-height sizing regardless of the specific glyphs.
-    case capHeight
-}
+import AppKit
 
 /// A rendered label: printer raster rows plus a readable preview image.
 public struct RenderedLabel {
@@ -19,9 +12,10 @@ public struct RenderedLabel {
     public var lengthDots: Int { rows.count }
 }
 
-/// Renders text (and an optional leading image/PDF) to printer raster rows for a
-/// PT‑P300BT‑class device. Print head = `bufferWidth` dots (128); only the centre
-/// `printableHeight` dots (64 ≈ 9 mm) print.
+/// Renders a label (a list of cells: text / image / symbol, each normal or
+/// inverted) to printer raster rows for a PT‑P300BT‑class device. Print head =
+/// `bufferWidth` dots (128); only the centre `printableHeight` dots (64 ≈ 9 mm)
+/// print. A label of length L dots is L raster lines.
 public struct LabelRenderer {
     public var printableHeight: Int
     public var bufferWidth: Int
@@ -39,26 +33,56 @@ public struct LabelRenderer {
     /// Grayscale bitmap, row-major, row 0 = top, 0 = black … 255 = white.
     private struct Gray { var width: Int; var height: Int; var px: [UInt8] }
 
-    public func render(text: String,
-                       fontName: String = "Helvetica",
-                       sizing: SizingMode = .fitText,
-                       imageURL: URL? = nil,
-                       mergeGapDots: Int = 24,
-                       sideMarginDots: Int = 12,
-                       lineSpacing: CGFloat = 1.05,
-                       fillFraction: CGFloat = 1.0) -> RenderedLabel? {
-        let H = printableHeight
-        var parts: [Gray] = []
-        if let url = imageURL, let img = loadImageGray(url, height: H) { parts.append(img) }
-        let normalized = text.replacingOccurrences(of: "\\n", with: "\n")
-        if !normalized.isEmpty,
-           let t = textGray(normalized, fontName: fontName, sizing: sizing,
-                            lineSpacing: lineSpacing, fillFraction: fillFraction,
-                            sideMarginDots: sideMarginDots) {
-            parts.append(t)
+    // MARK: - Public API
+
+    /// Render a label from its cells.
+    public func render(cells: [LabelCell], gapDots: Int = 18,
+                       lineSpacing: CGFloat = 1.05, fillFraction: CGFloat = 1.0) -> RenderedLabel? {
+        let grays = cells.compactMap {
+            renderCell($0, lineSpacing: lineSpacing, fillFraction: fillFraction)
         }
-        guard !parts.isEmpty else { return nil }
-        return rasterize(compose(parts, gap: mergeGapDots, height: H))
+        guard !grays.isEmpty else { return nil }
+        return rasterize(compose(grays, gap: gapDots, height: printableHeight))
+    }
+
+    /// Convenience: an optional leading image plus text, as two cells.
+    public func render(text: String, fontName: String = "Helvetica",
+                       sizing: SizingMode = .fitText, imageURL: URL? = nil,
+                       mergeGapDots: Int = 24) -> RenderedLabel? {
+        var cells: [LabelCell] = []
+        if let url = imageURL { cells.append(.image(url.path)) }
+        if !text.isEmpty { cells.append(LabelCell(kind: .text, text: text, fontName: fontName, sizing: sizing)) }
+        return render(cells: cells, gapDots: mergeGapDots)
+    }
+
+    // MARK: - Per-cell
+
+    private func renderCell(_ cell: LabelCell, lineSpacing: CGFloat, fillFraction: CGFloat) -> Gray? {
+        let H = printableHeight
+        let inverted = cell.style == .inverted
+        let vFill = inverted ? min(fillFraction, 0.74) : fillFraction
+        let innerH = max(1, Int(CGFloat(H) * vFill))
+        let pad = inverted ? 18 : 0
+
+        var g: Gray?
+        switch cell.kind {
+        case .text:
+            let text = cell.text.replacingOccurrences(of: "\\n", with: "\n")
+            g = textGray(text, fontName: cell.fontName, sizing: cell.sizing,
+                         lineSpacing: lineSpacing, fillFraction: vFill,
+                         sideMarginDots: inverted ? 18 : 12)
+        case .image:
+            if let p = cell.imagePath, let c = imageContentGray(URL(fileURLWithPath: p), height: innerH) {
+                g = place(c, hPad: pad)
+            }
+        case .symbol:
+            if let n = cell.symbolName, let c = symbolContentGray(n, height: innerH) {
+                g = place(c, hPad: pad)
+            }
+        }
+        guard var gray = g else { return nil }
+        if inverted { for i in gray.px.indices { gray.px[i] = 255 - gray.px[i] } }
+        return gray
     }
 
     // MARK: - Text
@@ -68,7 +92,6 @@ public struct LabelRenderer {
                           sideMarginDots: Int) -> Gray? {
         let H = printableHeight
         let lines = text.components(separatedBy: "\n")
-
         func line(_ s: String, _ font: CTFont) -> CTLine {
             let attrs: [NSAttributedString.Key: Any] = [
                 .init(rawValue: kCTFontAttributeName as String): font,
@@ -77,11 +100,9 @@ public struct LabelRenderer {
             return CTLineCreateWithAttributedString(
                 NSAttributedString(string: s, attributes: attrs) as CFAttributedString)
         }
-
         let S0: CGFloat = 100
         let probe = CTFontCreateWithName(fontName as CFString, S0, nil)
-        let asc = CTFontGetAscent(probe), desc = CTFontGetDescent(probe)
-        let cap = CTFontGetCapHeight(probe)
+        let asc = CTFontGetAscent(probe), desc = CTFontGetDescent(probe), cap = CTFontGetCapHeight(probe)
         let step0 = (asc + desc) * lineSpacing
         var top0 = -CGFloat.greatestFiniteMagnitude, bot0 = CGFloat.greatestFiniteMagnitude
         for (k, s) in lines.enumerated() {
@@ -112,56 +133,63 @@ public struct LabelRenderer {
         return readGray(ctx, W, H)
     }
 
-    // MARK: - Image / PDF
+    // MARK: - Image / PDF / symbol → content bitmap of the given height
 
-    private func loadImageGray(_ url: URL, height H: Int) -> Gray? {
-        if url.pathExtension.lowercased() == "pdf" { return loadPDFGray(url, height: H) }
+    private func imageContentGray(_ url: URL, height ih: Int) -> Gray? {
+        if url.pathExtension.lowercased() == "pdf" {
+            guard let doc = CGPDFDocument(url as CFURL), let page = doc.page(at: 1) else { return nil }
+            let box = page.getBoxRect(.mediaBox); guard box.height > 0 else { return nil }
+            let scale = CGFloat(ih) / box.height
+            let sW = max(1, Int((box.width * scale).rounded()))
+            guard let ctx = grayContext(sW, ih) else { return nil }
+            ctx.saveGState(); ctx.scaleBy(x: scale, y: scale)
+            ctx.translateBy(x: -box.minX, y: -box.minY); ctx.drawPDFPage(page); ctx.restoreGState()
+            return cropHorizontally(readGray(ctx, sW, ih))
+        }
         guard let src = CGImageSourceCreateWithURL(url as CFURL, nil),
               let cg = CGImageSourceCreateImageAtIndex(src, 0, nil) else { return nil }
-        let sW = max(1, Int((CGFloat(cg.width) * CGFloat(H) / CGFloat(cg.height)).rounded()))
-        guard let ctx = grayContext(sW, H) else { return nil }
+        let sW = max(1, Int((CGFloat(cg.width) * CGFloat(ih) / CGFloat(cg.height)).rounded()))
+        guard let ctx = grayContext(sW, ih) else { return nil }
         ctx.interpolationQuality = .high
-        // readGray treats data row 0 as the top, matching CTLineDraw'd text, so
-        // draw the image without a CTM flip to keep it upright alongside text.
-        ctx.draw(cg, in: CGRect(x: 0, y: 0, width: sW, height: H))
-        return cropHorizontally(readGray(ctx, sW, H))
+        ctx.draw(cg, in: CGRect(x: 0, y: 0, width: sW, height: ih))
+        return cropHorizontally(readGray(ctx, sW, ih))
     }
 
-    private func loadPDFGray(_ url: URL, height H: Int) -> Gray? {
-        guard let doc = CGPDFDocument(url as CFURL), let page = doc.page(at: 1) else { return nil }
-        let box = page.getBoxRect(.mediaBox)
-        guard box.height > 0 else { return nil }
-        let scale = CGFloat(H) / box.height
-        let sW = max(1, Int((box.width * scale).rounded()))
-        guard let ctx = grayContext(sW, H) else { return nil }
-        ctx.saveGState()
-        ctx.scaleBy(x: scale, y: scale)
-        ctx.translateBy(x: -box.minX, y: -box.minY)
-        ctx.drawPDFPage(page)               // PDF is y-up: draws upright already
-        ctx.restoreGState()
-        return cropHorizontally(readGray(ctx, sW, H))
+    private func symbolContentGray(_ name: String, height ih: Int) -> Gray? {
+        let cfg = NSImage.SymbolConfiguration(pointSize: CGFloat(ih), weight: .regular)
+        guard let base = NSImage(systemSymbolName: name, accessibilityDescription: nil),
+              let sym = base.withSymbolConfiguration(cfg) else { return nil }
+        let w = max(1, Int(sym.size.width.rounded())), h = max(1, Int(sym.size.height.rounded()))
+        guard let ctx = grayContext(w, h) else { return nil }
+        let ns = NSGraphicsContext(cgContext: ctx, flipped: false)
+        NSGraphicsContext.saveGraphicsState()
+        NSGraphicsContext.current = ns
+        NSColor.black.set()
+        sym.draw(in: NSRect(x: 0, y: 0, width: w, height: h),
+                 from: .zero, operation: .sourceOver, fraction: 1.0)
+        NSGraphicsContext.restoreGraphicsState()
+        return cropHorizontally(readGray(ctx, w, h))
     }
 
-    /// Trim left/right whitespace columns so the merge gap is consistent.
-    private func cropHorizontally(_ g: Gray, threshold: UInt8 = 200) -> Gray {
-        var lo = g.width, hi = -1
-        for c in 0..<g.width {
-            var dark = false
-            for r in 0..<g.height where g.px[r * g.width + c] < threshold { dark = true; break }
-            if dark { lo = min(lo, c); hi = max(hi, c) }
+    /// Centre a content bitmap (height ≤ printableHeight) in a full-height white
+    /// canvas with `hPad` columns of padding on each side.
+    private func place(_ content: Gray, hPad: Int) -> Gray {
+        let H = printableHeight
+        let w = content.width + 2 * hPad
+        var px = [UInt8](repeating: 255, count: w * H)
+        let yoff = (H - content.height) / 2
+        for r in 0..<content.height {
+            let dr = r + yoff; guard dr >= 0, dr < H else { continue }
+            for c in 0..<content.width { px[dr * w + (c + hPad)] = content.px[r * content.width + c] }
         }
-        guard hi >= lo else { return g }
-        let w = hi - lo + 1
-        var px = [UInt8](repeating: 255, count: w * g.height)
-        for r in 0..<g.height { for c in 0..<w { px[r * w + c] = g.px[r * g.width + (lo + c)] } }
-        return Gray(width: w, height: g.height, px: px)
+        return Gray(width: w, height: H, px: px)
     }
 
     // MARK: - Compose + rasterize
 
     private func compose(_ parts: [Gray], gap: Int, height H: Int) -> Gray {
         let total = parts.map(\.width).reduce(0, +) + gap * max(0, parts.count - 1)
-        var px = [UInt8](repeating: 255, count: total * H)
+        var px = [UInt8](repeating: 255, count: max(1, total) * H)
         var x = 0
         for (i, p) in parts.enumerated() {
             for r in 0..<H { for c in 0..<p.width { px[r * total + (x + c)] = p.px[r * p.width + c] } }
@@ -209,6 +237,18 @@ public struct LabelRenderer {
         var px = [UInt8](repeating: 255, count: w * h)
         for r in 0..<h { for c in 0..<w { px[r * w + c] = ptr[r * bpr + c] } }
         return Gray(width: w, height: h, px: px)
+    }
+
+    private func cropHorizontally(_ g: Gray, threshold: UInt8 = 200) -> Gray {
+        var lo = g.width, hi = -1
+        for c in 0..<g.width {
+            for r in 0..<g.height where g.px[r * g.width + c] < threshold { lo = min(lo, c); hi = max(hi, c); break }
+        }
+        guard hi >= lo else { return g }
+        let w = hi - lo + 1
+        var px = [UInt8](repeating: 255, count: w * g.height)
+        for r in 0..<g.height { for c in 0..<w { px[r * w + c] = g.px[r * g.width + (lo + c)] } }
+        return Gray(width: w, height: g.height, px: px)
     }
 }
 #endif

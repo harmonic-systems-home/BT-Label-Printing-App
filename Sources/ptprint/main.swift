@@ -14,8 +14,9 @@ import UniformTypeIdentifiers
 
 var args = Array(CommandLine.arguments.dropFirst())
 var flipLength = false, flipWidth = false, name = "PT-P300", font = "Helvetica"
-var previewPath: String?, imagePath: String?
+var previewPath: String?, imagePath: String?, symbolName: String?
 var sizing: SizingMode = .fitText
+var invert = false
 var text = "Hello from Swift"
 var sawText = false
 var i = 0
@@ -23,10 +24,12 @@ while i < args.count {
     switch args[i] {
     case "--flip-length": flipLength = true
     case "--flip-width": flipWidth = true
+    case "--invert": invert = true
     case "--name": i += 1; if i < args.count { name = args[i] }
     case "--font": i += 1; if i < args.count { font = args[i] }
     case "--preview": i += 1; if i < args.count { previewPath = args[i] }
     case "--image": i += 1; if i < args.count { imagePath = args[i] }
+    case "--symbol": i += 1; if i < args.count { symbolName = args[i] }
     case "--sizing": i += 1; if i < args.count { sizing = args[i] == "cap" ? .capHeight : .fitText }
     default: if !sawText { text = args[i]; sawText = true }
     }
@@ -36,9 +39,15 @@ while i < args.count {
 func err(_ s: String) { FileHandle.standardError.write((s + "\n").data(using: .utf8)!) }
 
 let renderer = LabelRenderer(flipLength: flipLength, flipWidth: flipWidth)
-let imageURL = imagePath.map { URL(fileURLWithPath: $0) }
-guard let rendered = renderer.render(text: text, fontName: font, sizing: sizing, imageURL: imageURL) else {
-    err("** Failed to render text."); exit(3)
+var cells: [LabelCell] = []
+if let n = symbolName { cells.append(.symbol(n)) }
+if let p = imagePath { cells.append(.image(p)) }
+if !text.isEmpty {
+    cells.append(LabelCell(kind: .text, text: text, fontName: font, sizing: sizing,
+                           style: invert ? .inverted : .normal))
+}
+guard let rendered = renderer.render(cells: cells) else {
+    err("** Failed to render label."); exit(3)
 }
 let rows = rendered.rows
 

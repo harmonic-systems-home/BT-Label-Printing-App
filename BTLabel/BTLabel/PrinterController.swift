@@ -6,18 +6,30 @@ import AppKit
 import UniformTypeIdentifiers
 import PTouchKit
 
-/// A saved label design.
-struct LabelFavorite: Identifiable, Hashable, Codable {
+/// A saved label design (an ordered list of cells).
+struct SavedLabel: Identifiable, Hashable, Codable {
     var id = UUID()
-    var text: String
-    var fontName: String
-    var sizing: SizingMode = .fitText
-    var imagePath: String?
+    var name: String
+    var cells: [LabelCell]
 }
 
-/// Bridges the SwiftUI UI to PTouchKit. Bluetooth work runs on a dedicated
-/// thread (the IOBluetooth transport pumps its own run loop), with results
-/// hopped back to the main actor.
+/// A curated set of SF Symbols offered in the symbol picker.
+/// NOTE: SF Symbols are used here for the prototype; replace with a bundled
+/// Apache/MIT icon set (e.g. Material Symbols) before commercial release.
+enum SymbolCatalog {
+    static let names: [String] = [
+        "clock", "alarm", "timer", "calendar", "sun.max", "moon.stars", "sparkles",
+        "star.fill", "staroflife.fill", "bolt.fill", "flame.fill", "drop.fill",
+        "heart.fill", "checkmark.seal.fill", "xmark.octagon.fill",
+        "exclamationmark.triangle.fill", "info.circle.fill", "arrow.right", "arrow.up",
+        "location.fill", "house.fill", "building.2.fill", "phone.fill", "envelope.fill",
+        "wifi", "battery.100", "leaf.fill", "pawprint.fill", "gift.fill", "cart.fill",
+        "bag.fill", "wrench.and.screwdriver.fill", "trash.fill", "flag.fill", "tag.fill",
+        "key.fill", "lock.fill", "music.note", "camera.fill", "car.fill", "airplane",
+        "cup.and.saucer.fill", "fork.knife", "cross.case.fill", "pills.fill",
+    ]
+}
+
 @MainActor
 final class PrinterController: ObservableObject {
     enum Activity: Equatable { case idle, working }
@@ -27,23 +39,73 @@ final class PrinterController: ObservableObject {
     @Published var status: PrinterStatus?
     @Published var message = "Not connected"
 
-    // Editor state
-    @Published var text = "Hello"
-    @Published var fontName = "Helvetica"
-    @Published var sizing: SizingMode = .fitText
-    @Published var imageURL: URL?
-    @Published var mergeGap: Int = 24
-    @Published var favorites: [LabelFavorite] = []
+    // Label = ordered cells (default: one text cell).
+    @Published var cells: [LabelCell] = [LabelCell(kind: .text, text: "Hello")]
+    @Published var selectedID: LabelCell.ID?
+    @Published var favorites: [SavedLabel] = []
 
     private let renderer = LabelRenderer()
 
-    /// Live preview image + raster rows for the current text/font/image.
-    var rendered: RenderedLabel? {
-        renderer.render(text: text, fontName: fontName, sizing: sizing,
-                        imageURL: imageURL, mergeGapDots: mergeGap)
+    var rendered: RenderedLabel? { renderer.render(cells: cells) }
+    var isBusy: Bool { activity == .working }
+    var selectedIndex: Int? { cells.firstIndex { $0.id == selectedID } }
+
+    init() { selectedID = cells.first?.id }
+
+    // MARK: - Cell operations
+
+    func addCell(_ kind: LabelCell.Kind) {
+        var c = LabelCell(kind: kind)
+        switch kind {
+        case .text: c.text = "Text"
+        case .symbol: c.symbolName = SymbolCatalog.names.first
+        case .image: break
+        }
+        let at = (selectedIndex.map { $0 + 1 }) ?? cells.count
+        cells.insert(c, at: at)
+        selectedID = c.id
+        if kind == .image { pickImage(for: c.id) }
     }
 
-    var isBusy: Bool { activity == .working }
+    func deleteSelected() {
+        guard let idx = selectedIndex else { return }
+        cells.remove(at: idx)
+        selectedID = cells[safe: idx]?.id ?? cells.last?.id
+    }
+
+    func move(_ delta: Int) {
+        guard let idx = selectedIndex else { return }
+        let j = idx + delta
+        guard cells.indices.contains(j) else { return }
+        cells.swapAt(idx, j)
+    }
+
+    func pickImage(for id: LabelCell.ID) {
+        guard let idx = cells.firstIndex(where: { $0.id == id }) else { return }
+        let panel = NSOpenPanel()
+        panel.allowedContentTypes = [.png, .jpeg, .pdf]
+        panel.allowsMultipleSelection = false
+        panel.canChooseDirectories = false
+        if panel.runModal() == .OK, let url = panel.url {
+            cells[idx].kind = .image
+            cells[idx].imagePath = url.path
+        }
+    }
+
+    // MARK: - Favorites
+
+    func saveFavorite() {
+        let label = cells.compactMap { $0.kind == .text ? $0.text : nil }
+            .joined(separator: " ").trimmingCharacters(in: .whitespacesAndNewlines)
+        favorites.insert(SavedLabel(name: label.isEmpty ? "Label" : label, cells: cells), at: 0)
+    }
+
+    func load(_ fav: SavedLabel) {
+        cells = fav.cells
+        selectedID = cells.first?.id
+    }
+
+    // MARK: - Printing
 
     func refreshStatus() async {
         await perform("Connecting…") { t in
@@ -63,36 +125,12 @@ final class PrinterController: ObservableObject {
         }
     }
 
-    func saveFavorite() {
-        guard !text.isEmpty || imageURL != nil else { return }
-        favorites.insert(LabelFavorite(text: text, fontName: fontName, sizing: sizing,
-                                       imagePath: imageURL?.path), at: 0)
-    }
-
-    func load(_ fav: LabelFavorite) {
-        text = fav.text; fontName = fav.fontName; sizing = fav.sizing
-        imageURL = fav.imagePath.map { URL(fileURLWithPath: $0) }
-    }
-
-    func pickImage() {
-        let panel = NSOpenPanel()
-        panel.allowedContentTypes = [.png, .jpeg, .pdf]
-        panel.allowsMultipleSelection = false
-        panel.canChooseDirectories = false
-        if panel.runModal() == .OK { imageURL = panel.url }
-    }
-
-    func clearImage() { imageURL = nil }
-
-    // MARK: - Bluetooth plumbing
-
     private func perform(_ starting: String,
                          _ op: @escaping @Sendable (RFCOMMTransport) throws -> (PrinterStatus?, String)) async {
         guard activity == .idle else { return }
         activity = .working
         message = starting
-        let name = deviceName
-        let result = await BluetoothRunner.run(name: name, op: op)
+        let result = await BluetoothRunner.run(name: deviceName, op: op)
         if let s = result.status { status = s }
         message = result.message
         activity = .idle
@@ -124,7 +162,10 @@ private enum BluetoothRunner {
     }
 }
 
-/// Map Brother tape/text colour codes to display colours (best-effort).
+extension Array {
+    subscript(safe i: Int) -> Element? { indices.contains(i) ? self[i] : nil }
+}
+
 enum TapeColor {
     static func color(_ code: UInt8) -> Color {
         switch code {
@@ -134,7 +175,7 @@ enum TapeColor {
         case 0x06: return .yellow
         case 0x07: return .green
         case 0x08: return .black
-        case 0x03, 0x09: return Color(white: 0.95)   // clear
+        case 0x03, 0x09: return Color(white: 0.95)
         default: return .gray
         }
     }
