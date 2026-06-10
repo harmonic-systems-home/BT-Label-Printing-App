@@ -36,13 +36,13 @@ public struct LabelRenderer {
     // MARK: - Public API
 
     /// Render a label from its cells.
-    public func render(cells: [LabelCell], gapDots: Int = 18,
+    public func render(cells: [LabelCell], gapDots: Int = 18, endMarginDots: Int = 18,
                        lineSpacing: CGFloat = 1.05, fillFraction: CGFloat = 1.0) -> RenderedLabel? {
         let grays = cells.compactMap {
             renderCell($0, lineSpacing: lineSpacing, fillFraction: fillFraction)
         }
         guard !grays.isEmpty else { return nil }
-        return rasterize(compose(grays, gap: gapDots, height: printableHeight))
+        return rasterize(compose(grays, gap: gapDots, margin: endMarginDots, height: printableHeight))
     }
 
     /// Convenience: an optional leading image plus text, as two cells.
@@ -76,8 +76,8 @@ public struct LabelRenderer {
                 g = place(c, hPad: pad)
             }
         case .symbol:
-            if let n = cell.symbolName, let c = symbolContentGray(n, height: innerH) {
-                g = place(c, hPad: pad)
+            if let n = cell.symbolName, let ink = symbolInk(n) {
+                g = place(scaleToHeight(ink, innerH), hPad: pad)
             }
         }
         guard var gray = g else { return nil }
@@ -155,15 +155,13 @@ public struct LabelRenderer {
         return cropHorizontally(readGray(ctx, sW, ih))
     }
 
-    private func symbolContentGray(_ name: String, height ih: Int) -> Gray? {
-        let cfg = NSImage.SymbolConfiguration(pointSize: CGFloat(ih), weight: .regular)
+    /// The symbol's tight ink bitmap (rendered large for quality). Uses the
+    /// alpha channel as the glyph shape so it's appearance-independent.
+    private func symbolInk(_ name: String) -> Gray? {
+        let cfg = NSImage.SymbolConfiguration(pointSize: 240, weight: .regular)
         guard let base = NSImage(systemSymbolName: name, accessibilityDescription: nil),
               let sym = base.withSymbolConfiguration(cfg) else { return nil }
         let w = max(1, Int(sym.size.width.rounded())), h = max(1, Int(sym.size.height.rounded()))
-        // Render to RGBA and use the ALPHA channel as the glyph shape, then fill
-        // black. This ignores the symbol's tint, so it works regardless of the
-        // app's light/dark appearance (a dark-mode template would otherwise be
-        // white-on-white and invisible).
         guard let rep = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: w, pixelsHigh: h,
                 bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true, isPlanar: false,
                 colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0) else { return nil }
@@ -178,7 +176,21 @@ public struct LabelRenderer {
         for r in 0..<h {
             for c in 0..<w where data[r * rowBytes + c * spp + (spp - 1)] > 40 { px[r * w + c] = 0 }
         }
-        return cropHorizontally(Gray(width: w, height: h, px: px))
+        return cropToInk(Gray(width: w, height: h, px: px))
+    }
+
+    /// Scale a grayscale bitmap to an exact height, preserving aspect.
+    private func scaleToHeight(_ g: Gray, _ targetH: Int) -> Gray {
+        if g.height == targetH { return g }
+        guard let src = grayContext(g.width, g.height) else { return g }
+        let sp = src.data!.bindMemory(to: UInt8.self, capacity: src.bytesPerRow * g.height)
+        for r in 0..<g.height { for c in 0..<g.width { sp[r * src.bytesPerRow + c] = g.px[r * g.width + c] } }
+        guard let img = src.makeImage() else { return g }
+        let tW = max(1, Int((CGFloat(g.width) * CGFloat(targetH) / CGFloat(g.height)).rounded()))
+        guard let dst = grayContext(tW, targetH) else { return g }
+        dst.interpolationQuality = .high
+        dst.draw(img, in: CGRect(x: 0, y: 0, width: tW, height: targetH))
+        return readGray(dst, tW, targetH)
     }
 
     /// Centre a content bitmap (height ≤ printableHeight) in a full-height white
@@ -197,15 +209,16 @@ public struct LabelRenderer {
 
     // MARK: - Compose + rasterize
 
-    private func compose(_ parts: [Gray], gap: Int, height H: Int) -> Gray {
-        let total = parts.map(\.width).reduce(0, +) + gap * max(0, parts.count - 1)
-        var px = [UInt8](repeating: 255, count: max(1, total) * H)
-        var x = 0
+    private func compose(_ parts: [Gray], gap: Int, margin: Int, height H: Int) -> Gray {
+        let inner = parts.map(\.width).reduce(0, +) + gap * max(0, parts.count - 1)
+        let total = max(1, inner + 2 * margin)
+        var px = [UInt8](repeating: 255, count: total * H)
+        var x = margin
         for (i, p) in parts.enumerated() {
             for r in 0..<H { for c in 0..<p.width { px[r * total + (x + c)] = p.px[r * p.width + c] } }
             x += p.width + (i < parts.count - 1 ? gap : 0)
         }
-        return Gray(width: max(1, total), height: H, px: px)
+        return Gray(width: total, height: H, px: px)
     }
 
     private func rasterize(_ g: Gray) -> RenderedLabel? {
@@ -246,6 +259,20 @@ public struct LabelRenderer {
         let ptr = ctx.data!.bindMemory(to: UInt8.self, capacity: bpr * h)
         var px = [UInt8](repeating: 255, count: w * h)
         for r in 0..<h { for c in 0..<w { px[r * w + c] = ptr[r * bpr + c] } }
+        return Gray(width: w, height: h, px: px)
+    }
+
+    private func cropToInk(_ g: Gray, threshold: UInt8 = 200) -> Gray {
+        var lo = g.width, hi = -1, top = g.height, bot = -1
+        for r in 0..<g.height {
+            for c in 0..<g.width where g.px[r * g.width + c] < threshold {
+                lo = min(lo, c); hi = max(hi, c); top = min(top, r); bot = max(bot, r)
+            }
+        }
+        guard hi >= lo, bot >= top else { return g }
+        let w = hi - lo + 1, h = bot - top + 1
+        var px = [UInt8](repeating: 255, count: w * h)
+        for r in 0..<h { for c in 0..<w { px[r * w + c] = g.px[(top + r) * g.width + (lo + c)] } }
         return Gray(width: w, height: h, px: px)
     }
 

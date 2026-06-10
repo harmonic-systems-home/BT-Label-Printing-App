@@ -90,19 +90,36 @@ struct EditorPanel: View {
 
 struct PreviewCard: View {
     @EnvironmentObject private var c: PrinterController
+    private let stripH: CGFloat = 72
+
     var body: some View {
         let tape = c.status.map { TapeColor.color($0.tapeColor) } ?? .white
         ScrollView(.horizontal, showsIndicators: true) {
-            Group {
+            HStack(alignment: .center, spacing: 0) {
                 if let cg = c.rendered?.preview {
-                    Image(decorative: cg, scale: 1).resizable().interpolation(.none)
-                        .aspectRatio(contentMode: .fit).frame(height: 72).padding(.horizontal, 8)
+                    let w = stripH * CGFloat(cg.width) / CGFloat(cg.height)
+                    Image(decorative: cg, scale: 1)
+                        .resizable().interpolation(.none)
+                        .frame(width: w, height: stripH)
+                        .background(tape)
+                        .overlay(alignment: .trailing) {            // where printing stops
+                            Rectangle().fill(.red.opacity(0.7)).frame(width: 1)
+                        }
+                        .overlay(RoundedRectangle(cornerRadius: 2).stroke(.secondary.opacity(0.35)))
+                    VStack(spacing: 1) {                            // cut / end marker
+                        Image(systemName: "scissors").font(.caption2)
+                        Text("end").font(.system(size: 8))
+                    }
+                    .foregroundStyle(.red.opacity(0.8))
+                    .padding(.leading, 3)
                 } else {
-                    Text("Empty label").foregroundStyle(.secondary).frame(height: 72)
+                    Text("Empty label").foregroundStyle(.secondary).frame(height: stripH)
                 }
             }
+            .padding(10)
         }
-        .frame(height: 96).frame(maxWidth: .infinity).background(tape)
+        .frame(height: 100).frame(maxWidth: .infinity)
+        .background(Color(nsColor: .controlBackgroundColor))
         .clipShape(RoundedRectangle(cornerRadius: 8))
         .overlay(RoundedRectangle(cornerRadius: 8).stroke(.secondary.opacity(0.3)))
     }
