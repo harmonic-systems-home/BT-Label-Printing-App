@@ -75,16 +75,20 @@ struct EditorPanel: View {
             HStack {
                 Button { c.newLabel() } label: { Label("New", systemImage: "doc.badge.plus") }
                 Spacer()
+                HStack(spacing: 8) {
+                    Button { c.addCell(.text) } label: { Label("Aa", systemImage: "plus") }
+                    Button { c.addCell(.image) } label: { Label("Image", systemImage: "plus") }
+                    Button { c.addCell(.symbol) } label: { Label("Symbol", systemImage: "plus") }
+                }
+                Spacer()
                 Button { c.saveFavorite() } label: { Label("Save to Favorites", systemImage: "star") }
             }
-            PreviewCard()
+            InteractivePreview()
             if let r = c.rendered {
-                Text(String(format: "%d cells · %d raster lines · ~%.1f cm",
+                Text(String(format: "%d cells · %d raster lines · ~%.1f cm · drag to reorder, drag off to delete",
                             c.cells.count, r.lengthDots, Double(r.lengthDots) * 0.149 / 10))
                     .font(.caption).foregroundStyle(.secondary)
             }
-
-            CellStrip()
 
             if let idx = c.selectedIndex {
                 CellEditorView(cell: $c.cells[idx])
@@ -97,74 +101,132 @@ struct EditorPanel: View {
     }
 }
 
-struct PreviewCard: View {
+struct InteractivePreview: View {
     @EnvironmentObject private var c: PrinterController
     private let tapeH: CGFloat = 84
-    private let printFraction: CGFloat = 0.745   // 9mm printable / 12mm tape
+    private let printFraction: CGFloat = 0.745
+    private let marginDots: CGFloat = 18
+    private let gapDots: CGFloat = 18
+    @State private var dragID: LabelCell.ID?
+    @State private var dragDX: CGFloat = 0
+    @State private var dragDY: CGFloat = 0
+
+    private struct CellRender: Identifiable {
+        let id: LabelCell.ID
+        let image: CGImage?
+        let dots: Int
+        let width: CGFloat
+    }
 
     var body: some View {
         let tape = c.status.map { TapeColor.color($0.tapeColor) } ?? .white
+        let imgH = tapeH * printFraction
+        let scale = imgH / 64
+        let items: [CellRender] = c.cells.map { cell in
+            let cg = c.cellImage(cell)
+            let dots = cg?.width ?? 1
+            return CellRender(id: cell.id, image: cg, dots: dots, width: CGFloat(dots) * scale)
+        }
+        let gap = gapDots * scale
+        let margin = marginDots * scale
+        let totalW = margin * 2 + items.reduce(0) { $0 + $1.width } + gap * CGFloat(max(0, items.count - 1))
+
         ScrollView(.horizontal, showsIndicators: true) {
             HStack(alignment: .bottom, spacing: 0) {
-                if let r = c.rendered {
-                    let cg = r.preview
-                    let imgH = tapeH * printFraction
-                    let scale = imgH / CGFloat(cg.height)          // display points per dot
-                    let w = scale * CGFloat(cg.width)
-                    VStack(spacing: 3) {
-                        if r.cellWidths.count > 1 { cellRuler(r, scale: scale, totalWidth: w) }
-                        ZStack {
-                            Rectangle().fill(tape)                  // full tape (12mm)
-                            Image(decorative: cg, scale: 1)         // printable (9mm), centred
-                                .resizable().interpolation(.none).frame(width: w, height: imgH)
+                VStack(spacing: 3) {
+                    if items.count > 1 { ruler(items, gap: gap, margin: margin, totalW: totalW) }
+                    ZStack(alignment: .leading) {
+                        Rectangle().fill(tape)
+                        HStack(spacing: 0) {
+                            Color.clear.frame(width: margin)
+                            ForEach(Array(items.enumerated()), id: \.element.id) { idx, item in
+                                if idx > 0 { Color.clear.frame(width: gap) }
+                                cellView(item, imgH: imgH, items: items, gap: gap)
+                            }
+                            Color.clear.frame(width: margin)
                         }
-                        .frame(width: w, height: tapeH)
-                        .overlay(alignment: .trailing) { Rectangle().fill(.red.opacity(0.7)).frame(width: 1) }
-                        .overlay(RoundedRectangle(cornerRadius: 2).stroke(.secondary.opacity(0.35)))
                     }
-                    VStack(spacing: 1) {                            // cut / end marker
-                        Image(systemName: "scissors").font(.caption2); Text("end").font(.system(size: 8))
-                    }.foregroundStyle(.red.opacity(0.8)).padding(.leading, 3).padding(.bottom, 6)
-                    if c.copies > 1 {
-                        Text("× \(c.copies)").font(.title3).bold()
-                            .foregroundStyle(.secondary).padding(.leading, 12).padding(.bottom, 10)
-                    }
-                } else {
-                    Text("Empty label").foregroundStyle(.secondary).frame(height: tapeH)
+                    .frame(width: totalW, height: tapeH)
+                    .overlay(alignment: .trailing) { Rectangle().fill(.red.opacity(0.7)).frame(width: 1) }
+                    .overlay(RoundedRectangle(cornerRadius: 2).stroke(.secondary.opacity(0.35)))
+                }
+                VStack(spacing: 1) { Image(systemName: "scissors").font(.caption2); Text("end").font(.system(size: 8)) }
+                    .foregroundStyle(.red.opacity(0.8)).padding(.leading, 3).padding(.bottom, 6)
+                if c.copies > 1 {
+                    Text("× \(c.copies)").font(.title3).bold().foregroundStyle(.secondary).padding(.leading, 12).padding(.bottom, 10)
                 }
             }.padding(10)
         }
-        .frame(height: tapeH + 48).frame(maxWidth: .infinity)
+        .frame(height: tapeH + (c.cells.count > 1 ? 48 : 28)).frame(maxWidth: .infinity)
         .background(Color(nsColor: .controlBackgroundColor))
         .clipShape(RoundedRectangle(cornerRadius: 8))
         .overlay(RoundedRectangle(cornerRadius: 8).stroke(.secondary.opacity(0.3)))
     }
 
-    private func cellRuler(_ r: RenderedLabel, scale: CGFloat, totalWidth: CGFloat) -> some View {
-        HStack(spacing: 0) {
-            Spacer().frame(width: CGFloat(r.marginDots) * scale)
-            ForEach(Array(r.cellWidths.enumerated()), id: \.offset) { i, dots in
-                if i > 0 { Spacer().frame(width: CGFloat(r.gapDots) * scale) }
-                cellTag(i + 1, dots: dots, width: CGFloat(dots) * scale)
+    private func cellView(_ item: CellRender, imgH: CGFloat, items: [CellRender], gap: CGFloat) -> some View {
+        let isDragging = dragID == item.id
+        let selected = c.selectedID == item.id
+        return Group {
+            if let cg = item.image {
+                Image(decorative: cg, scale: 1).resizable().interpolation(.none).frame(width: item.width, height: imgH)
+            } else {
+                Color.gray.opacity(0.2).frame(width: item.width, height: imgH)
             }
-            Spacer().frame(width: CGFloat(r.marginDots) * scale)
         }
-        .frame(width: totalWidth)
+        .overlay(RoundedRectangle(cornerRadius: 2).stroke(selected ? Color.accentColor : .clear, lineWidth: 2))
+        .opacity(isDragging ? 0.65 : 1)
+        .offset(x: isDragging ? dragDX : 0, y: isDragging ? dragDY : 0)
+        .zIndex(isDragging ? 1 : 0)
+        .onTapGesture { c.selectedID = item.id }
+        .contextMenu {
+            Button(role: .destructive) { c.delete(id: item.id) } label: { Label("Delete Cell", systemImage: "trash") }
+        }
+        .gesture(
+            DragGesture(minimumDistance: 5)
+                .onChanged { v in
+                    if dragID == nil { dragID = item.id; c.selectedID = item.id }
+                    guard dragID == item.id, let i = c.cells.firstIndex(where: { $0.id == item.id }) else { return }
+                    dragDX = v.translation.width; dragDY = v.translation.height
+                    if i < c.cells.count - 1 {
+                        let nW = width(of: c.cells[i + 1].id, items) + gap
+                        if dragDX > nW / 2 { c.cells.swapAt(i, i + 1); dragDX -= nW }
+                    }
+                    if i > 0 {
+                        let nW = width(of: c.cells[i - 1].id, items) + gap
+                        if dragDX < -nW / 2 { c.cells.swapAt(i, i - 1); dragDX += nW }
+                    }
+                }
+                .onEnded { v in
+                    if abs(v.translation.height) > 55 { c.delete(id: item.id) }
+                    dragID = nil; dragDX = 0; dragDY = 0
+                }
+        )
     }
 
-    private func cellTag(_ n: Int, dots: Int, width: CGFloat) -> some View {
-        VStack(spacing: 0) {
-            Text("Cell \(n)").font(.system(size: 9)).lineLimit(1)
-            Text(String(format: "%.0f mm", Double(dots) * 0.149)).font(.system(size: 8)).foregroundStyle(.secondary)
-        }
-        .frame(width: max(width, 1)).clipped()
-        .overlay(alignment: .bottom) {
-            HStack(spacing: 0) {
-                Rectangle().frame(width: 1, height: 4)
-                Rectangle().frame(height: 1)
-                Rectangle().frame(width: 1, height: 4)
-            }.foregroundStyle(.secondary.opacity(0.45))
-        }
+    private func width(of id: LabelCell.ID, _ items: [CellRender]) -> CGFloat {
+        items.first { $0.id == id }?.width ?? 1
+    }
+
+    private func ruler(_ items: [CellRender], gap: CGFloat, margin: CGFloat, totalW: CGFloat) -> some View {
+        HStack(spacing: 0) {
+            Color.clear.frame(width: margin)
+            ForEach(Array(items.enumerated()), id: \.element.id) { idx, item in
+                if idx > 0 { Color.clear.frame(width: gap) }
+                VStack(spacing: 0) {
+                    Text("Cell \(idx + 1)").font(.system(size: 9)).lineLimit(1)
+                    Text(String(format: "%.0f mm", Double(item.dots) * 0.149)).font(.system(size: 8)).foregroundStyle(.secondary)
+                }
+                .frame(width: max(item.width, 1)).clipped()
+                .overlay(alignment: .bottom) {
+                    HStack(spacing: 0) {
+                        Rectangle().frame(width: 1, height: 4)
+                        Rectangle().frame(height: 1)
+                        Rectangle().frame(width: 1, height: 4)
+                    }.foregroundStyle(.secondary.opacity(0.45))
+                }
+            }
+            Color.clear.frame(width: margin)
+        }.frame(width: totalW)
     }
 }
 
@@ -213,59 +275,6 @@ struct SettingsSheet: View {
             HStack { Spacer(); Button("Done") { dismiss() }.keyboardShortcut(.defaultAction) }
         }
         .padding(20).frame(width: 380)
-    }
-}
-
-// MARK: - Cell strip
-
-struct CellStrip: View {
-    @EnvironmentObject private var c: PrinterController
-    var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 8) {
-                Menu {
-                    Button("Text") { c.addCell(.text) }
-                    Button("Image…") { c.addCell(.image) }
-                    Button("Symbol") { c.addCell(.symbol) }
-                } label: { Label("Add Cell", systemImage: "plus") }
-                    .menuStyle(.borderlessButton).fixedSize()
-                Divider().frame(height: 18)
-                Button { c.move(-1) } label: { Image(systemName: "arrow.left") }.disabled(c.selectedIndex == nil)
-                Button { c.move(1) } label: { Image(systemName: "arrow.right") }.disabled(c.selectedIndex == nil)
-                Button(role: .destructive) { c.deleteSelected() } label: { Image(systemName: "trash") }
-                    .disabled(c.selectedIndex == nil || c.cells.count <= 1)
-                Spacer()
-            }.buttonStyle(.bordered)
-
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 8) {
-                    ForEach(c.cells) { cell in
-                        CellChip(cell: cell, selected: cell.id == c.selectedID)
-                            .onTapGesture { c.selectedID = cell.id }
-                    }
-                }.padding(.vertical, 2)
-            }
-        }
-    }
-}
-
-struct CellChip: View {
-    let cell: LabelCell
-    let selected: Bool
-    var body: some View {
-        let inverted = cell.style == .inverted
-        HStack(spacing: 6) {
-            switch cell.kind {
-            case .text: Image(systemName: "textformat"); Text(cell.text.isEmpty ? "Text" : cell.text).lineLimit(1)
-            case .image: Image(systemName: "photo"); Text((cell.imagePath as NSString?)?.lastPathComponent ?? "Image").lineLimit(1)
-            case .symbol: Image(systemName: cell.symbolName ?? "questionmark"); Text("Symbol")
-            }
-        }
-        .font(.callout).padding(.horizontal, 10).padding(.vertical, 6).frame(maxWidth: 160)
-        .background(inverted ? Color.black : Color.gray.opacity(0.12))
-        .foregroundStyle(inverted ? Color.white : Color.primary)
-        .clipShape(RoundedRectangle(cornerRadius: 6))
-        .overlay(RoundedRectangle(cornerRadius: 6).stroke(selected ? Color.accentColor : .clear, lineWidth: 2))
     }
 }
 

@@ -91,6 +91,18 @@ final class PrinterController: ObservableObject {
         renderer.render(cells: resolvedCells(index: 1, cells))?.preview
     }
 
+    /// A single cell's preview image (tokens expanded, no end margins), for the
+    /// interactive preview bar.
+    func cellImage(_ cell: LabelCell) -> CGImage? {
+        renderer.render(cells: resolvedCells(index: startIndex, [cell]), endMarginDots: 0)?.preview
+    }
+
+    func delete(id: LabelCell.ID) {
+        guard cells.count > 1 else { return }   // keep at least one cell
+        cells.removeAll { $0.id == id }
+        if selectedID == id { selectedID = cells.first?.id }
+    }
+
     // MARK: - Cell operations
 
     func addCell(_ kind: LabelCell.Kind) {
