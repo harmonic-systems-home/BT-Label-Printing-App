@@ -9,6 +9,7 @@ private let fontChoices = [
 struct ContentView: View {
     @EnvironmentObject private var c: PrinterController
     @State private var favSelection: SavedLabel.ID?
+    @State private var showSettings = false
 
     var body: some View {
         NavigationSplitView {
@@ -20,7 +21,11 @@ struct ContentView: View {
                 ScrollView { EditorPanel().padding() }
             }
             .navigationTitle("BTLabel")
+            .toolbar {
+                ToolbarItem { Button { showSettings = true } label: { Image(systemName: "gearshape") } }
+            }
         }
+        .sheet(isPresented: $showSettings) { SettingsSheet().environmentObject(c) }
     }
 }
 
@@ -74,11 +79,14 @@ struct EditorPanel: View {
                 Text("Add a cell to begin.").foregroundStyle(.secondary)
             }
 
+            PrintOptionsView()
+
             HStack {
                 Button { c.saveFavorite() } label: { Label("Save to Favorites", systemImage: "star") }
                 Spacer()
                 Button { Task { await c.printCurrent() } } label: {
-                    Label("Print", systemImage: "printer.fill").frame(minWidth: 90)
+                    Label(c.copies > 1 ? "Print \(c.copies)" : "Print", systemImage: "printer.fill")
+                        .frame(minWidth: 90)
                 }
                 .keyboardShortcut(.return, modifiers: .command)
                 .buttonStyle(.borderedProminent)
@@ -90,38 +98,92 @@ struct EditorPanel: View {
 
 struct PreviewCard: View {
     @EnvironmentObject private var c: PrinterController
-    private let stripH: CGFloat = 72
+    private let tapeH: CGFloat = 84
+    private let printFraction: CGFloat = 0.745   // 9mm printable / 12mm tape
 
     var body: some View {
         let tape = c.status.map { TapeColor.color($0.tapeColor) } ?? .white
         ScrollView(.horizontal, showsIndicators: true) {
             HStack(alignment: .center, spacing: 0) {
                 if let cg = c.rendered?.preview {
-                    let w = stripH * CGFloat(cg.width) / CGFloat(cg.height)
-                    Image(decorative: cg, scale: 1)
-                        .resizable().interpolation(.none)
-                        .frame(width: w, height: stripH)
-                        .background(tape)
-                        .overlay(alignment: .trailing) {            // where printing stops
-                            Rectangle().fill(.red.opacity(0.7)).frame(width: 1)
-                        }
-                        .overlay(RoundedRectangle(cornerRadius: 2).stroke(.secondary.opacity(0.35)))
-                    VStack(spacing: 1) {                            // cut / end marker
-                        Image(systemName: "scissors").font(.caption2)
-                        Text("end").font(.system(size: 8))
+                    let imgH = tapeH * printFraction
+                    let w = imgH * CGFloat(cg.width) / CGFloat(cg.height)
+                    ZStack {
+                        Rectangle().fill(tape)                       // full tape (12mm)
+                        Image(decorative: cg, scale: 1)              // printable (9mm), centred
+                            .resizable().interpolation(.none).frame(width: w, height: imgH)
                     }
-                    .foregroundStyle(.red.opacity(0.8))
-                    .padding(.leading, 3)
+                    .frame(width: w, height: tapeH)
+                    .overlay(alignment: .trailing) { Rectangle().fill(.red.opacity(0.7)).frame(width: 1) }
+                    .overlay(RoundedRectangle(cornerRadius: 2).stroke(.secondary.opacity(0.35)))
+                    VStack(spacing: 1) {                             // cut / end marker
+                        Image(systemName: "scissors").font(.caption2); Text("end").font(.system(size: 8))
+                    }.foregroundStyle(.red.opacity(0.8)).padding(.leading, 3)
+                    if c.copies > 1 {
+                        Text("× \(c.copies)").font(.title3).bold()
+                            .foregroundStyle(.secondary).padding(.leading, 12)
+                    }
                 } else {
-                    Text("Empty label").foregroundStyle(.secondary).frame(height: stripH)
+                    Text("Empty label").foregroundStyle(.secondary).frame(height: tapeH)
                 }
-            }
-            .padding(10)
+            }.padding(10)
         }
-        .frame(height: 100).frame(maxWidth: .infinity)
+        .frame(height: tapeH + 28).frame(maxWidth: .infinity)
         .background(Color(nsColor: .controlBackgroundColor))
         .clipShape(RoundedRectangle(cornerRadius: 8))
         .overlay(RoundedRectangle(cornerRadius: 8).stroke(.secondary.opacity(0.3)))
+    }
+}
+
+// MARK: - Print options
+
+struct PrintOptionsView: View {
+    @EnvironmentObject private var c: PrinterController
+    var body: some View {
+        GroupBox("Print") {
+            VStack(alignment: .leading, spacing: 10) {
+                Stepper("Copies: \(c.copies)", value: $c.copies, in: 1...999).frame(maxWidth: 200)
+                DisclosureGroup("Numbering & spacing") {
+                    VStack(alignment: .leading, spacing: 8) {
+                        HStack {
+                            Stepper("Start /i = \(c.startIndex)", value: $c.startIndex, in: 1...99999)
+                                .frame(maxWidth: 200)
+                            Stepper(c.totalCount == 0 ? "Total /c = auto (\(c.effectiveCount))"
+                                                      : "Total /c = \(c.totalCount)",
+                                    value: $c.totalCount, in: 0...99999).frame(maxWidth: 240)
+                        }
+                        HStack {
+                            Stepper("Spacing: \(String(format: "%.1f", c.spacingMM)) mm",
+                                    value: $c.spacingMM, in: 0...30, step: 0.5).frame(maxWidth: 220)
+                            Toggle("Cut line between labels", isOn: $c.cutLine)
+                        }
+                        Text("Text tokens: /i index · /c count · /n name · /p phone · /s street · /e email · /d date. Saved labels keep the tokens; the preview shows the expansions.")
+                            .font(.caption2).foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }.padding(.top, 4)
+                }
+            }.padding(6)
+        }
+    }
+}
+
+struct SettingsSheet: View {
+    @EnvironmentObject private var c: PrinterController
+    @Environment(\.dismiss) private var dismiss
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Text("Contact").font(.headline)
+            Form {
+                TextField("Name", text: $c.contactName)
+                TextField("Phone", text: $c.contactPhone)
+                TextField("Street", text: $c.contactStreet)
+                TextField("Email", text: $c.contactEmail)
+            }
+            Text("Used by the /n /p /s /e text tokens. /d inserts today's date. These are saved between launches.")
+                .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            HStack { Spacer(); Button("Done") { dismiss() }.keyboardShortcut(.defaultAction) }
+        }
+        .padding(20).frame(width: 380)
     }
 }
 
@@ -138,17 +200,13 @@ struct CellStrip: View {
                     Button("Symbol") { c.addCell(.symbol) }
                 } label: { Label("Add Cell", systemImage: "plus") }
                     .menuStyle(.borderlessButton).fixedSize()
-
                 Divider().frame(height: 18)
-                Button { c.move(-1) } label: { Image(systemName: "arrow.left") }
-                    .disabled(c.selectedIndex == nil)
-                Button { c.move(1) } label: { Image(systemName: "arrow.right") }
-                    .disabled(c.selectedIndex == nil)
+                Button { c.move(-1) } label: { Image(systemName: "arrow.left") }.disabled(c.selectedIndex == nil)
+                Button { c.move(1) } label: { Image(systemName: "arrow.right") }.disabled(c.selectedIndex == nil)
                 Button(role: .destructive) { c.deleteSelected() } label: { Image(systemName: "trash") }
                     .disabled(c.selectedIndex == nil || c.cells.count <= 1)
                 Spacer()
-            }
-            .buttonStyle(.bordered)
+            }.buttonStyle(.bordered)
 
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 8) {
@@ -174,14 +232,11 @@ struct CellChip: View {
             case .symbol: Image(systemName: cell.symbolName ?? "questionmark"); Text("Symbol")
             }
         }
-        .font(.callout)
-        .padding(.horizontal, 10).padding(.vertical, 6)
-        .frame(maxWidth: 160)
+        .font(.callout).padding(.horizontal, 10).padding(.vertical, 6).frame(maxWidth: 160)
         .background(inverted ? Color.black : Color.gray.opacity(0.12))
         .foregroundStyle(inverted ? Color.white : Color.primary)
         .clipShape(RoundedRectangle(cornerRadius: 6))
-        .overlay(RoundedRectangle(cornerRadius: 6)
-            .stroke(selected ? Color.accentColor : .clear, lineWidth: 2))
+        .overlay(RoundedRectangle(cornerRadius: 6).stroke(selected ? Color.accentColor : .clear, lineWidth: 2))
     }
 }
 
@@ -211,8 +266,7 @@ struct CellEditorView: View {
                 case .image: imageControls
                 case .symbol: SymbolPicker(selection: $cell.symbolName)
                 }
-            }
-            .padding(6)
+            }.padding(6)
         }
         .onChange(of: cell.kind) { _, k in
             if k == .symbol, cell.symbolName == nil { cell.symbolName = SymbolCatalog.names.first }
@@ -224,7 +278,7 @@ struct CellEditorView: View {
         VStack(alignment: .leading, spacing: 10) {
             TextEditor(text: $cell.text).font(.system(size: 14)).frame(height: 60)
                 .overlay(RoundedRectangle(cornerRadius: 4).stroke(.secondary.opacity(0.3)))
-            Text("Return adds a second line — the font shrinks to fit.")
+            Text("Return adds a line. Tokens like /i /c /n /d are allowed (see Print options).")
                 .font(.caption2).foregroundStyle(.secondary)
             HStack {
                 Picker("Font", selection: $cell.fontName) {
@@ -242,8 +296,7 @@ struct CellEditorView: View {
         HStack(spacing: 12) {
             Button { c.pickImage(for: cell.id) } label: { Label("Choose Image…", systemImage: "photo") }
             if let p = cell.imagePath {
-                Text((p as NSString).lastPathComponent).lineLimit(1).truncationMode(.middle)
-                    .foregroundStyle(.secondary)
+                Text((p as NSString).lastPathComponent).lineLimit(1).truncationMode(.middle).foregroundStyle(.secondary)
             } else {
                 Text("PNG, JPEG, or single-page PDF.").font(.caption2).foregroundStyle(.secondary)
             }
@@ -261,8 +314,7 @@ struct SymbolPicker: View {
             ScrollView {
                 LazyVGrid(columns: cols, spacing: 8) {
                     ForEach(SymbolCatalog.names, id: \.self) { name in
-                        Image(systemName: name)
-                            .font(.title2).frame(width: 38, height: 34)
+                        Image(systemName: name).font(.title2).frame(width: 38, height: 34)
                             .background(selection == name ? Color.accentColor.opacity(0.25) : Color.gray.opacity(0.1))
                             .clipShape(RoundedRectangle(cornerRadius: 6))
                             .onTapGesture { selection = name }
@@ -284,19 +336,15 @@ struct FavoritesSidebar: View {
             ForEach(c.favorites) { fav in
                 VStack(alignment: .leading, spacing: 4) {
                     if let cg = c.previewImage(fav.cells) {
-                        Image(decorative: cg, scale: 1)
-                            .resizable().interpolation(.none)
+                        Image(decorative: cg, scale: 1).resizable().interpolation(.none)
                             .aspectRatio(CGFloat(cg.width) / CGFloat(cg.height), contentMode: .fit)
-                            .frame(height: 26)
-                            .padding(.horizontal, 3)
-                            .background(.white)
+                            .frame(height: 26).padding(.horizontal, 3).background(.white)
                             .clipShape(RoundedRectangle(cornerRadius: 3))
                             .frame(maxWidth: 168, alignment: .leading).clipped()
                     }
                     Text(fav.name).font(.caption).lineLimit(1)
                 }
-                .padding(.vertical, 2)
-                .tag(fav.id)
+                .padding(.vertical, 2).tag(fav.id)
                 .contentShape(Rectangle()).onTapGesture { c.load(fav) }
             }
             .onDelete { idx in c.favorites.remove(atOffsets: idx) }

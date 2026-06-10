@@ -13,9 +13,8 @@ struct SavedLabel: Identifiable, Hashable, Codable {
     var cells: [LabelCell]
 }
 
-/// A curated set of SF Symbols offered in the symbol picker.
-/// NOTE: SF Symbols are used here for the prototype; replace with a bundled
-/// Apache/MIT icon set (e.g. Material Symbols) before commercial release.
+/// Curated SF Symbols for the picker (prototype; swap for a bundled Apache/MIT
+/// set before commercial release — license).
 enum SymbolCatalog {
     static let names: [String] = [
         "clock", "alarm", "timer", "calendar", "sun.max", "moon.stars", "sparkles",
@@ -44,16 +43,56 @@ final class PrinterController: ObservableObject {
     @Published var selectedID: LabelCell.ID?
     @Published var favorites: [SavedLabel] = []
 
+    // Print run.
+    @Published var copies = 1
+    @Published var startIndex = 1
+    @Published var totalCount = 0        // 0 == auto (startIndex + copies - 1)
+    @Published var spacingMM = 4.0
+    @Published var cutLine = true
+
+    // Contact fields used by /n /p /s /e tokens (persisted).
+    @Published var contactName = ""  { didSet { saveContact() } }
+    @Published var contactPhone = "" { didSet { saveContact() } }
+    @Published var contactStreet = "" { didSet { saveContact() } }
+    @Published var contactEmail = "" { didSet { saveContact() } }
+
     private let renderer = LabelRenderer()
 
-    var rendered: RenderedLabel? { renderer.render(cells: cells) }
+    init() {
+        selectedID = cells.first?.id
+        loadContact()
+    }
+
     var isBusy: Bool { activity == .working }
-
-    /// A preview image for an arbitrary cell list (e.g. a favorite's thumbnail).
-    func previewImage(_ cells: [LabelCell]) -> CGImage? { renderer.render(cells: cells)?.preview }
     var selectedIndex: Int? { cells.firstIndex { $0.id == selectedID } }
+    var effectiveCount: Int { totalCount > 0 ? totalCount : (startIndex + max(1, copies) - 1) }
 
-    init() { selectedID = cells.first?.id }
+    private var todayString: String {
+        let df = DateFormatter(); df.dateStyle = .medium; df.timeStyle = .none
+        return df.string(from: Date())
+    }
+
+    func context(index: Int) -> TokenContext {
+        TokenContext(index: index, count: effectiveCount, name: contactName, phone: contactPhone,
+                     street: contactStreet, email: contactEmail, date: todayString)
+    }
+
+    /// Cells with text tokens expanded for the given label index.
+    func resolvedCells(index: Int, _ source: [LabelCell]? = nil) -> [LabelCell] {
+        let ctx = context(index: index)
+        return (source ?? cells).map { cell in
+            guard cell.kind == .text else { return cell }
+            var c = cell; c.text = TextTokens.expand(cell.text, ctx); return c
+        }
+    }
+
+    /// Live preview = the first label of the run, tokens expanded.
+    var rendered: RenderedLabel? { renderer.render(cells: resolvedCells(index: startIndex)) }
+
+    /// Thumbnail for a favorite (tokens expanded with index 1).
+    func previewImage(_ cells: [LabelCell]) -> CGImage? {
+        renderer.render(cells: resolvedCells(index: 1, cells))?.preview
+    }
 
     // MARK: - Cell operations
 
@@ -65,8 +104,7 @@ final class PrinterController: ObservableObject {
         case .image: break
         }
         let at = (selectedIndex.map { $0 + 1 }) ?? cells.count
-        cells.insert(c, at: at)
-        selectedID = c.id
+        cells.insert(c, at: at); selectedID = c.id
         if kind == .image { pickImage(for: c.id) }
     }
 
@@ -87,11 +125,9 @@ final class PrinterController: ObservableObject {
         guard let idx = cells.firstIndex(where: { $0.id == id }) else { return }
         let panel = NSOpenPanel()
         panel.allowedContentTypes = [.png, .jpeg, .pdf]
-        panel.allowsMultipleSelection = false
-        panel.canChooseDirectories = false
+        panel.allowsMultipleSelection = false; panel.canChooseDirectories = false
         if panel.runModal() == .OK, let url = panel.url {
-            cells[idx].kind = .image
-            cells[idx].imagePath = url.path
+            cells[idx].kind = .image; cells[idx].imagePath = url.path
         }
     }
 
@@ -103,10 +139,7 @@ final class PrinterController: ObservableObject {
         favorites.insert(SavedLabel(name: label.isEmpty ? "Label" : label, cells: cells), at: 0)
     }
 
-    func load(_ fav: SavedLabel) {
-        cells = fav.cells
-        selectedID = cells.first?.id
-    }
+    func load(_ fav: SavedLabel) { cells = fav.cells; selectedID = cells.first?.id }
 
     // MARK: - Printing
 
@@ -118,25 +151,59 @@ final class PrinterController: ObservableObject {
     }
 
     func printCurrent() async {
-        guard let rows = rendered?.rows, !rows.isEmpty else { message = "Nothing to print"; return }
+        let n = max(1, copies)
+        let spacing = max(0, Int((spacingMM / 0.149).rounded()))
+        var all: [[UInt8]] = []
+        for k in 0..<n {
+            guard let r = renderer.render(cells: resolvedCells(index: startIndex + k)) else { continue }
+            if !all.isEmpty {
+                all += Self.blankRows(spacing)
+                if cutLine { all += Self.cutLineRows(); all += Self.blankRows(spacing) }
+            }
+            all += r.rows
+        }
+        guard !all.isEmpty else { message = "Nothing to print"; return }
+        let rows = all
         let length = Double(rows.count) * 0.149 / 10
-        await perform("Printing…") { t in
+        await perform(n > 1 ? "Printing \(n) labels…" : "Printing…") { t in
             let s = try t.queryStatus(timeout: 6)
             guard s.isReadyToPrint else { return (s, "Printer not ready: \(s.summary)") }
             _ = try PrintJob.send(rows: rows, status: s, to: t)
-            return (s, String(format: "Printed (~%.1f cm)", length))
+            return (s, String(format: "Printed %d (~%.1f cm)", n, length))
         }
+    }
+
+    private static func blankRows(_ n: Int) -> [[UInt8]] {
+        Array(repeating: [UInt8](repeating: 0, count: 16), count: max(0, n))
+    }
+    private static func cutLineRows() -> [[UInt8]] {
+        var row = [UInt8](repeating: 0, count: 16)
+        for b in 4...11 { row[b] = 0xFF }   // dots 32..95 = printable band -> vertical line
+        return [row, row]
     }
 
     private func perform(_ starting: String,
                          _ op: @escaping @Sendable (RFCOMMTransport) throws -> (PrinterStatus?, String)) async {
         guard activity == .idle else { return }
-        activity = .working
-        message = starting
+        activity = .working; message = starting
         let result = await BluetoothRunner.run(name: deviceName, op: op)
         if let s = result.status { status = s }
-        message = result.message
-        activity = .idle
+        message = result.message; activity = .idle
+    }
+
+    // MARK: - Contact persistence
+
+    private func saveContact() {
+        let d = UserDefaults.standard
+        d.set(contactName, forKey: "contactName"); d.set(contactPhone, forKey: "contactPhone")
+        d.set(contactStreet, forKey: "contactStreet"); d.set(contactEmail, forKey: "contactEmail")
+    }
+    private func loadContact() {
+        let d = UserDefaults.standard
+        contactName = d.string(forKey: "contactName") ?? ""
+        contactPhone = d.string(forKey: "contactPhone") ?? ""
+        contactStreet = d.string(forKey: "contactStreet") ?? ""
+        contactEmail = d.string(forKey: "contactEmail") ?? ""
     }
 }
 
@@ -158,9 +225,7 @@ private enum BluetoothRunner {
                     cont.resume(returning: BTResult(status: nil, message: "\(error)"))
                 }
             }
-            thread.stackSize = 1 << 20
-            thread.name = "bluetooth.transport"
-            thread.start()
+            thread.stackSize = 1 << 20; thread.name = "bluetooth.transport"; thread.start()
         }
     }
 }
