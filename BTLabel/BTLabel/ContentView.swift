@@ -337,18 +337,24 @@ struct FavoritesSidebar: View {
         List {
             if favorites.isEmpty { Text("No favorites yet").foregroundStyle(.secondary) }
             ForEach(favorites) { fav in
-                VStack(alignment: .leading, spacing: 4) {
+                Group {
                     if let cg = c.previewImage(fav.cells) {
                         Image(decorative: cg, scale: 1).resizable().interpolation(.none)
                             .aspectRatio(CGFloat(cg.width) / CGFloat(cg.height), contentMode: .fit)
-                            .frame(height: 26).padding(.horizontal, 3).background(.white)
-                            .clipShape(RoundedRectangle(cornerRadius: 3))
+                            .frame(height: 34).padding(.horizontal, 3).background(.white)
+                            .clipShape(RoundedRectangle(cornerRadius: 4))
                             .frame(maxWidth: 168, alignment: .leading).clipped()
+                    } else {
+                        Text(fav.name.isEmpty ? "Label" : fav.name).font(.caption)
                     }
-                    Text(fav.name).font(.caption).lineLimit(1)
                 }
-                .padding(.vertical, 2)
-                .contentShape(Rectangle()).onTapGesture { c.load(fav) }
+                .padding(.vertical, 3)
+                .contentShape(Rectangle())
+                .onTapGesture { c.load(fav) }
+                .contextMenu {
+                    Button { c.load(fav) } label: { Label("Load", systemImage: "tray.and.arrow.down") }
+                    Button(role: .destructive) { c.delete(fav) } label: { Label("Delete", systemImage: "trash") }
+                }
             }
             .onDelete { idxs in idxs.forEach { c.delete(favorites[$0]) } }
         }.frame(minWidth: 180)

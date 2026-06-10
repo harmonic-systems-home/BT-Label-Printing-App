@@ -11,6 +11,7 @@ import SwiftData
 @main
 struct BTLabelApp: App {
     @StateObject private var controller = PrinterController()
+    private let container = BTLabelApp.makeContainer()
 
     var body: some Scene {
         WindowGroup {
@@ -19,8 +20,20 @@ struct BTLabelApp: App {
                 .frame(minWidth: 720, minHeight: 480)
         }
         .defaultSize(width: 820, height: 560)
-        // Local persistence now; automatically CloudKit-synced once the iCloud
-        // capability is added in Xcode (the model is CloudKit-compatible).
-        .modelContainer(for: SavedLabelModel.self)
+        .modelContainer(container)
+    }
+
+    /// Prefer a CloudKit-synced store; fall back to a local-only store if iCloud
+    /// isn't fully configured yet (e.g. no container selected), so the app never
+    /// crashes on launch.
+    static func makeContainer() -> ModelContainer {
+        let schema = Schema([SavedLabelModel.self])
+        do {
+            return try ModelContainer(for: schema,
+                configurations: ModelConfiguration(schema: schema, cloudKitDatabase: .automatic))
+        } catch {
+            return try! ModelContainer(for: schema,
+                configurations: ModelConfiguration(schema: schema, cloudKitDatabase: .none))
+        }
     }
 }
