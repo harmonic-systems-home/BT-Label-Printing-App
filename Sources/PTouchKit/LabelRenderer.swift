@@ -74,9 +74,12 @@ public struct LabelRenderer {
         switch cell.kind {
         case .text:
             let text = cell.text.replacingOccurrences(of: "\\n", with: "\n")
+            // Normal text renders tight (no internal side padding) so cell spacing
+            // alone controls the gap; page margins come from the label's end
+            // margin. Inverted keeps padding — that's the box's internal inset.
             g = textGray(text, fontName: cell.fontName, sizing: cell.sizing,
                          lineSpacing: lineSpacing, fillFraction: vFill,
-                         sideMarginDots: inverted ? 18 : 12)
+                         sideMarginDots: inverted ? 18 : 0)
         case .image:
             if let p = cell.imagePath, let c = imageContentGray(URL(fileURLWithPath: p), height: innerH) {
                 g = place(c, hPad: pad)
