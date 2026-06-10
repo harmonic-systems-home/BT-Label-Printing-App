@@ -160,15 +160,25 @@ public struct LabelRenderer {
         guard let base = NSImage(systemSymbolName: name, accessibilityDescription: nil),
               let sym = base.withSymbolConfiguration(cfg) else { return nil }
         let w = max(1, Int(sym.size.width.rounded())), h = max(1, Int(sym.size.height.rounded()))
-        guard let ctx = grayContext(w, h) else { return nil }
-        let ns = NSGraphicsContext(cgContext: ctx, flipped: false)
+        // Render to RGBA and use the ALPHA channel as the glyph shape, then fill
+        // black. This ignores the symbol's tint, so it works regardless of the
+        // app's light/dark appearance (a dark-mode template would otherwise be
+        // white-on-white and invisible).
+        guard let rep = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: w, pixelsHigh: h,
+                bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true, isPlanar: false,
+                colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0) else { return nil }
+        rep.size = NSSize(width: w, height: h)
         NSGraphicsContext.saveGraphicsState()
-        NSGraphicsContext.current = ns
-        NSColor.black.set()
-        sym.draw(in: NSRect(x: 0, y: 0, width: w, height: h),
-                 from: .zero, operation: .sourceOver, fraction: 1.0)
+        NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: rep)
+        sym.draw(in: NSRect(x: 0, y: 0, width: w, height: h))
         NSGraphicsContext.restoreGraphicsState()
-        return cropHorizontally(readGray(ctx, w, h))
+        guard let data = rep.bitmapData else { return nil }
+        let spp = rep.samplesPerPixel, rowBytes = rep.bytesPerRow
+        var px = [UInt8](repeating: 255, count: w * h)
+        for r in 0..<h {
+            for c in 0..<w where data[r * rowBytes + c * spp + (spp - 1)] > 40 { px[r * w + c] = 0 }
+        }
+        return cropHorizontally(Gray(width: w, height: h, px: px))
     }
 
     /// Centre a content bitmap (height ≤ printableHeight) in a full-height white
