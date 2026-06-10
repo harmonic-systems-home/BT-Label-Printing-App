@@ -140,6 +140,11 @@ final class PrinterController: ObservableObject {
 
     func load(_ fav: SavedLabelModel) { cells = fav.cells; selectedID = cells.first?.id }
 
+    func newLabel() {
+        cells = [LabelCell(kind: .text, text: "Text")]
+        selectedID = cells.first?.id
+    }
+
     func delete(_ fav: SavedLabelModel) {
         modelContext?.delete(fav)
         try? modelContext?.save()

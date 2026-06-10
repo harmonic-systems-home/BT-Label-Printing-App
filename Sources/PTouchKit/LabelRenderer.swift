@@ -9,6 +9,11 @@ import AppKit
 public struct RenderedLabel {
     public let rows: [[UInt8]]
     public let preview: CGImage
+    /// Width in dots of each rendered cell, in order (for a cell ruler).
+    public let cellWidths: [Int]
+    /// Gap (dots) between cells and end margin (dots) used in this layout.
+    public let gapDots: Int
+    public let marginDots: Int
     public var lengthDots: Int { rows.count }
 }
 
@@ -42,7 +47,8 @@ public struct LabelRenderer {
             renderCell($0, lineSpacing: lineSpacing, fillFraction: fillFraction)
         }
         guard !grays.isEmpty else { return nil }
-        return rasterize(compose(grays, gap: gapDots, margin: endMarginDots, height: printableHeight))
+        return rasterize(compose(grays, gap: gapDots, margin: endMarginDots, height: printableHeight),
+                         cellWidths: grays.map(\.width), gap: gapDots, margin: endMarginDots)
     }
 
     /// Convenience: an optional leading image plus text, as two cells.
@@ -221,7 +227,7 @@ public struct LabelRenderer {
         return Gray(width: total, height: H, px: px)
     }
 
-    private func rasterize(_ g: Gray) -> RenderedLabel? {
+    private func rasterize(_ g: Gray, cellWidths: [Int], gap: Int, margin: Int) -> RenderedLabel? {
         let H = g.height
         guard let ctx = grayContext(g.width, H), let data = ctx.data else { return nil }
         let ptr = data.bindMemory(to: UInt8.self, capacity: ctx.bytesPerRow * H)
@@ -240,7 +246,8 @@ public struct LabelRenderer {
             }
             rows.append(lineBytes)
         }
-        return RenderedLabel(rows: flipLength ? rows.reversed() : rows, preview: preview)
+        return RenderedLabel(rows: flipLength ? rows.reversed() : rows, preview: preview,
+                             cellWidths: cellWidths, gapDots: gap, marginDots: margin)
     }
 
     // MARK: - Helpers

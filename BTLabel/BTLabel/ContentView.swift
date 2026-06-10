@@ -73,7 +73,7 @@ struct EditorPanel: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             HStack {
-                Text("Preview").font(.headline)
+                Button { c.newLabel() } label: { Label("New", systemImage: "doc.badge.plus") }
                 Spacer()
                 Button { c.saveFavorite() } label: { Label("Save to Favorites", systemImage: "star") }
             }
@@ -105,34 +105,66 @@ struct PreviewCard: View {
     var body: some View {
         let tape = c.status.map { TapeColor.color($0.tapeColor) } ?? .white
         ScrollView(.horizontal, showsIndicators: true) {
-            HStack(alignment: .center, spacing: 0) {
-                if let cg = c.rendered?.preview {
+            HStack(alignment: .bottom, spacing: 0) {
+                if let r = c.rendered {
+                    let cg = r.preview
                     let imgH = tapeH * printFraction
-                    let w = imgH * CGFloat(cg.width) / CGFloat(cg.height)
-                    ZStack {
-                        Rectangle().fill(tape)                       // full tape (12mm)
-                        Image(decorative: cg, scale: 1)              // printable (9mm), centred
-                            .resizable().interpolation(.none).frame(width: w, height: imgH)
+                    let scale = imgH / CGFloat(cg.height)          // display points per dot
+                    let w = scale * CGFloat(cg.width)
+                    VStack(spacing: 3) {
+                        if r.cellWidths.count > 1 { cellRuler(r, scale: scale, totalWidth: w) }
+                        ZStack {
+                            Rectangle().fill(tape)                  // full tape (12mm)
+                            Image(decorative: cg, scale: 1)         // printable (9mm), centred
+                                .resizable().interpolation(.none).frame(width: w, height: imgH)
+                        }
+                        .frame(width: w, height: tapeH)
+                        .overlay(alignment: .trailing) { Rectangle().fill(.red.opacity(0.7)).frame(width: 1) }
+                        .overlay(RoundedRectangle(cornerRadius: 2).stroke(.secondary.opacity(0.35)))
                     }
-                    .frame(width: w, height: tapeH)
-                    .overlay(alignment: .trailing) { Rectangle().fill(.red.opacity(0.7)).frame(width: 1) }
-                    .overlay(RoundedRectangle(cornerRadius: 2).stroke(.secondary.opacity(0.35)))
-                    VStack(spacing: 1) {                             // cut / end marker
+                    VStack(spacing: 1) {                            // cut / end marker
                         Image(systemName: "scissors").font(.caption2); Text("end").font(.system(size: 8))
-                    }.foregroundStyle(.red.opacity(0.8)).padding(.leading, 3)
+                    }.foregroundStyle(.red.opacity(0.8)).padding(.leading, 3).padding(.bottom, 6)
                     if c.copies > 1 {
                         Text("× \(c.copies)").font(.title3).bold()
-                            .foregroundStyle(.secondary).padding(.leading, 12)
+                            .foregroundStyle(.secondary).padding(.leading, 12).padding(.bottom, 10)
                     }
                 } else {
                     Text("Empty label").foregroundStyle(.secondary).frame(height: tapeH)
                 }
             }.padding(10)
         }
-        .frame(height: tapeH + 28).frame(maxWidth: .infinity)
+        .frame(height: tapeH + 48).frame(maxWidth: .infinity)
         .background(Color(nsColor: .controlBackgroundColor))
         .clipShape(RoundedRectangle(cornerRadius: 8))
         .overlay(RoundedRectangle(cornerRadius: 8).stroke(.secondary.opacity(0.3)))
+    }
+
+    private func cellRuler(_ r: RenderedLabel, scale: CGFloat, totalWidth: CGFloat) -> some View {
+        HStack(spacing: 0) {
+            Spacer().frame(width: CGFloat(r.marginDots) * scale)
+            ForEach(Array(r.cellWidths.enumerated()), id: \.offset) { i, dots in
+                if i > 0 { Spacer().frame(width: CGFloat(r.gapDots) * scale) }
+                cellTag(i + 1, dots: dots, width: CGFloat(dots) * scale)
+            }
+            Spacer().frame(width: CGFloat(r.marginDots) * scale)
+        }
+        .frame(width: totalWidth)
+    }
+
+    private func cellTag(_ n: Int, dots: Int, width: CGFloat) -> some View {
+        VStack(spacing: 0) {
+            Text("Cell \(n)").font(.system(size: 9)).lineLimit(1)
+            Text(String(format: "%.0f mm", Double(dots) * 0.149)).font(.system(size: 8)).foregroundStyle(.secondary)
+        }
+        .frame(width: max(width, 1)).clipped()
+        .overlay(alignment: .bottom) {
+            HStack(spacing: 0) {
+                Rectangle().frame(width: 1, height: 4)
+                Rectangle().frame(height: 1)
+                Rectangle().frame(width: 1, height: 4)
+            }.foregroundStyle(.secondary.opacity(0.45))
+        }
     }
 }
 
@@ -141,28 +173,24 @@ struct PreviewCard: View {
 struct PrintOptionsView: View {
     @EnvironmentObject private var c: PrinterController
     var body: some View {
-        GroupBox("Print") {
-            VStack(alignment: .leading, spacing: 10) {
-                Stepper("Copies: \(c.copies)", value: $c.copies, in: 1...999).frame(maxWidth: 200)
-                DisclosureGroup("Numbering & spacing") {
-                    VStack(alignment: .leading, spacing: 8) {
-                        HStack {
-                            Stepper("Start /i = \(c.startIndex)", value: $c.startIndex, in: 1...99999)
-                                .frame(maxWidth: 200)
-                            Stepper(c.totalCount == 0 ? "Total /c = auto (\(c.effectiveCount))"
-                                                      : "Total /c = \(c.totalCount)",
-                                    value: $c.totalCount, in: 0...99999).frame(maxWidth: 240)
-                        }
-                        HStack {
-                            Stepper("Spacing: \(String(format: "%.1f", c.spacingMM)) mm",
-                                    value: $c.spacingMM, in: 0...30, step: 0.5).frame(maxWidth: 220)
-                            Toggle("Cut line between labels", isOn: $c.cutLine)
-                        }
-                        Text("Text tokens: /i index · /c count · /n name · /p phone · /s street · /e email · /d date. Saved labels keep the tokens; the preview shows the expansions.")
-                            .font(.caption2).foregroundStyle(.secondary)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }.padding(.top, 4)
-                }
+        GroupBox {
+            DisclosureGroup("Print Settings") {
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack {
+                        Stepper("Copies: \(c.copies)", value: $c.copies, in: 1...999).frame(maxWidth: 180)
+                        Stepper("Start: \(c.startIndex)", value: $c.startIndex, in: 1...99999).frame(maxWidth: 170)
+                        Stepper(c.totalCount == 0 ? "Total: auto (\(c.effectiveCount))" : "Total: \(c.totalCount)",
+                                value: $c.totalCount, in: 0...99999).frame(maxWidth: 210)
+                    }
+                    HStack {
+                        Stepper("Spacing: \(String(format: "%.1f", c.spacingMM)) mm",
+                                value: $c.spacingMM, in: 0...30, step: 0.5).frame(maxWidth: 220)
+                        Toggle("Cut line between labels", isOn: $c.cutLine)
+                    }
+                    Text("Text tokens: /i index · /c count · /n name · /p phone · /s street · /e email · /d date. Saved labels keep the tokens; the preview shows the expansions.")
+                        .font(.caption2).foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }.padding(.top, 6)
             }.padding(6)
         }
     }
@@ -250,24 +278,27 @@ struct CellEditorView: View {
     var body: some View {
         GroupBox {
             VStack(alignment: .leading, spacing: 12) {
-                HStack {
+                HStack(spacing: 14) {
                     Picker("Type", selection: $cell.kind) {
                         Text("Text").tag(LabelCell.Kind.text)
                         Text("Image").tag(LabelCell.Kind.image)
                         Text("Symbol").tag(LabelCell.Kind.symbol)
-                    }.frame(maxWidth: 150)
-                    Picker("Style", selection: $cell.style) {
-                        Text("Normal").tag(CellStyle.normal)
-                        Text("Inverted").tag(CellStyle.inverted)
-                    }.pickerStyle(.segmented).frame(maxWidth: 170)
+                    }.frame(width: 140)
+                    HStack(spacing: 6) {
+                        Text("Style").fixedSize()
+                        Picker("Style", selection: $cell.style) {
+                            Text("Normal").tag(CellStyle.normal)
+                            Text("Inverted").tag(CellStyle.inverted)
+                        }.labelsHidden().pickerStyle(.segmented).fixedSize()
+                    }
                     if cell.kind == .text {
                         Picker("Font", selection: $cell.fontName) {
                             ForEach(fontChoices, id: \.self) { Text($0).tag($0) }
-                        }.frame(maxWidth: 170)
+                        }.frame(width: 165)
                         Picker("Size", selection: $cell.sizing) {
                             Text("Fit text").tag(SizingMode.fitText)
                             Text("Consistent").tag(SizingMode.capHeight)
-                        }.frame(maxWidth: 150)
+                        }.frame(width: 150)
                     }
                     Spacer()
                 }
