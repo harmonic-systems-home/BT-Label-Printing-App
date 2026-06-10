@@ -43,6 +43,8 @@ struct PrinterStatusBar: View {
             Button { Task { await c.refreshStatus() } } label: {
                 Label("Status", systemImage: "arrow.clockwise")
             }.disabled(c.isBusy)
+            if c.isBusy { ProgressView().controlSize(.small) }
+            Text(c.message).font(.callout).foregroundStyle(.secondary).lineLimit(1)
             if let s = c.status {
                 HStack(spacing: 6) {
                     Circle().fill(TapeColor.color(s.tapeColor))
@@ -52,8 +54,13 @@ struct PrinterStatusBar: View {
                 }.font(.callout)
             }
             Spacer()
-            if c.isBusy { ProgressView().controlSize(.small) }
-            Text(c.message).font(.callout).foregroundStyle(.secondary).lineLimit(1)
+            Button { Task { await c.printCurrent() } } label: {
+                Label(c.copies > 1 ? "Print \(c.copies)" : "Print", systemImage: "printer.fill")
+                    .frame(minWidth: 80)
+            }
+            .keyboardShortcut(.return, modifiers: .command)
+            .buttonStyle(.borderedProminent)
+            .disabled(c.isBusy || c.rendered == nil)
         }
         .padding(.horizontal).padding(.vertical, 8)
     }
@@ -65,7 +72,11 @@ struct EditorPanel: View {
     @EnvironmentObject private var c: PrinterController
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            Text("Preview").font(.headline)
+            HStack {
+                Text("Preview").font(.headline)
+                Spacer()
+                Button { c.saveFavorite() } label: { Label("Save to Favorites", systemImage: "star") }
+            }
             PreviewCard()
             if let r = c.rendered {
                 Text(String(format: "%d cells · %d raster lines · ~%.1f cm",
@@ -82,18 +93,6 @@ struct EditorPanel: View {
             }
 
             PrintOptionsView()
-
-            HStack {
-                Button { c.saveFavorite() } label: { Label("Save to Favorites", systemImage: "star") }
-                Spacer()
-                Button { Task { await c.printCurrent() } } label: {
-                    Label(c.copies > 1 ? "Print \(c.copies)" : "Print", systemImage: "printer.fill")
-                        .frame(minWidth: 90)
-                }
-                .keyboardShortcut(.return, modifiers: .command)
-                .buttonStyle(.borderedProminent)
-                .disabled(c.isBusy || c.rendered == nil)
-            }
         }
     }
 }
@@ -256,11 +255,20 @@ struct CellEditorView: View {
                         Text("Text").tag(LabelCell.Kind.text)
                         Text("Image").tag(LabelCell.Kind.image)
                         Text("Symbol").tag(LabelCell.Kind.symbol)
-                    }.frame(maxWidth: 200)
+                    }.frame(maxWidth: 150)
                     Picker("Style", selection: $cell.style) {
                         Text("Normal").tag(CellStyle.normal)
                         Text("Inverted").tag(CellStyle.inverted)
-                    }.pickerStyle(.segmented).frame(maxWidth: 200)
+                    }.pickerStyle(.segmented).frame(maxWidth: 170)
+                    if cell.kind == .text {
+                        Picker("Font", selection: $cell.fontName) {
+                            ForEach(fontChoices, id: \.self) { Text($0).tag($0) }
+                        }.frame(maxWidth: 170)
+                        Picker("Size", selection: $cell.sizing) {
+                            Text("Fit text").tag(SizingMode.fitText)
+                            Text("Consistent").tag(SizingMode.capHeight)
+                        }.frame(maxWidth: 150)
+                    }
                     Spacer()
                 }
                 switch cell.kind {
@@ -282,15 +290,6 @@ struct CellEditorView: View {
                 .overlay(RoundedRectangle(cornerRadius: 4).stroke(.secondary.opacity(0.3)))
             Text("Return adds a line. Tokens like /i /c /n /d are allowed (see Print options).")
                 .font(.caption2).foregroundStyle(.secondary)
-            HStack {
-                Picker("Font", selection: $cell.fontName) {
-                    ForEach(fontChoices, id: \.self) { Text($0).tag($0) }
-                }.frame(maxWidth: 220)
-                Picker("Size", selection: $cell.sizing) {
-                    Text("Fit text").tag(SizingMode.fitText)
-                    Text("Consistent").tag(SizingMode.capHeight)
-                }.frame(maxWidth: 190)
-            }
         }
     }
 
