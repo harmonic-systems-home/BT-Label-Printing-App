@@ -13,6 +13,7 @@ final class SavedLabelModel {
     var name: String = ""
     var createdAt: Date = Date()
     var cellsData: Data = Data()
+    var cellSpacingMM: Double = 2.7
 
     /// The decoded cells (not itself persisted; backed by `cellsData`).
     var cells: [LabelCell] {
@@ -20,8 +21,9 @@ final class SavedLabelModel {
         set { cellsData = (try? JSONEncoder().encode(newValue)) ?? Data() }
     }
 
-    init(name: String, cells: [LabelCell]) {
+    init(name: String, cells: [LabelCell], cellSpacingMM: Double = 2.7) {
         self.name = name
         self.cellsData = (try? JSONEncoder().encode(cells)) ?? Data()
+        self.cellSpacingMM = cellSpacingMM
     }
 }

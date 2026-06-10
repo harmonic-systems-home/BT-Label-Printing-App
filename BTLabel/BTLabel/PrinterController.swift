@@ -32,9 +32,10 @@ final class PrinterController: ObservableObject {
     @Published var status: PrinterStatus?
     @Published var message = "Not connected"
 
-    // Label = ordered cells (default: one text cell).
+    // Label = ordered cells (default: one text cell) + inter-cell spacing.
     @Published var cells: [LabelCell] = [LabelCell(kind: .text, text: "Hello")]
     @Published var selectedID: LabelCell.ID?
+    @Published var cellSpacingMM = 2.7
 
     /// Set by the view; favorites are persisted via SwiftData (synced if the
     /// iCloud capability is enabled).
@@ -63,6 +64,7 @@ final class PrinterController: ObservableObject {
     var isBusy: Bool { activity == .working }
     var selectedIndex: Int? { cells.firstIndex { $0.id == selectedID } }
     var effectiveCount: Int { totalCount > 0 ? totalCount : (startIndex + max(1, copies) - 1) }
+    var cellSpacingDots: Int { max(0, Int((cellSpacingMM / 0.149).rounded())) }
 
     private var todayString: String {
         let df = DateFormatter(); df.dateStyle = .medium; df.timeStyle = .none
@@ -84,11 +86,14 @@ final class PrinterController: ObservableObject {
     }
 
     /// Live preview = the first label of the run, tokens expanded.
-    var rendered: RenderedLabel? { renderer.render(cells: resolvedCells(index: startIndex)) }
+    var rendered: RenderedLabel? {
+        renderer.render(cells: resolvedCells(index: startIndex), gapDots: cellSpacingDots)
+    }
 
     /// Thumbnail for a favorite (tokens expanded with index 1).
-    func previewImage(_ cells: [LabelCell]) -> CGImage? {
-        renderer.render(cells: resolvedCells(index: 1, cells))?.preview
+    func previewImage(_ cells: [LabelCell], spacingMM: Double = 2.7) -> CGImage? {
+        renderer.render(cells: resolvedCells(index: 1, cells),
+                        gapDots: max(0, Int((spacingMM / 0.149).rounded())))?.preview
     }
 
     /// A single cell's preview image (tokens expanded, no end margins), for the
@@ -146,14 +151,18 @@ final class PrinterController: ObservableObject {
         guard let ctx = modelContext else { return }
         let label = cells.compactMap { $0.kind == .text ? $0.text : nil }
             .joined(separator: " ").trimmingCharacters(in: .whitespacesAndNewlines)
-        ctx.insert(SavedLabelModel(name: label.isEmpty ? "Label" : label, cells: cells))
+        ctx.insert(SavedLabelModel(name: label.isEmpty ? "Label" : label, cells: cells,
+                                   cellSpacingMM: cellSpacingMM))
         try? ctx.save()
     }
 
-    func load(_ fav: SavedLabelModel) { cells = fav.cells; selectedID = cells.first?.id }
+    func load(_ fav: SavedLabelModel) {
+        cells = fav.cells; cellSpacingMM = fav.cellSpacingMM; selectedID = cells.first?.id
+    }
 
     func newLabel() {
         cells = [LabelCell(kind: .text, text: "Text")]
+        cellSpacingMM = 2.7
         selectedID = cells.first?.id
     }
 
@@ -182,7 +191,7 @@ final class PrinterController: ObservableObject {
         var any = false
         for k in 0..<n {
             guard let r = renderer.render(cells: resolvedCells(index: startIndex + k),
-                                          endMarginDots: 0) else { continue }
+                                          gapDots: cellSpacingDots, endMarginDots: 0) else { continue }
             if any {
                 all += Self.blankRows(gap)
                 if cutLine { all += Self.cutLineRows(); all += Self.blankRows(gap) }

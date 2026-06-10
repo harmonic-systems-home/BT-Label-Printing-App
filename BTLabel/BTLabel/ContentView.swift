@@ -84,10 +84,18 @@ struct EditorPanel: View {
                 Button { c.saveFavorite() } label: { Label("Save to Favorites", systemImage: "star") }
             }
             InteractivePreview()
-            if let r = c.rendered {
-                Text(String(format: "%d cells · %d raster lines · ~%.1f cm · drag to reorder, drag off to delete",
-                            c.cells.count, r.lengthDots, Double(r.lengthDots) * 0.149 / 10))
-                    .font(.caption).foregroundStyle(.secondary)
+            HStack {
+                if let r = c.rendered {
+                    Text(String(format: "%d cells · %d raster lines · ~%.1f cm · drag to reorder, drag off to delete",
+                                c.cells.count, r.lengthDots, Double(r.lengthDots) * 0.149 / 10))
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+                Spacer()
+                if c.cells.count > 1 {
+                    Stepper("Cell spacing: \(String(format: "%.1f", c.cellSpacingMM)) mm",
+                            value: $c.cellSpacingMM, in: 0...20, step: 0.5)
+                        .font(.caption).fixedSize()
+                }
             }
 
             if let idx = c.selectedIndex {
@@ -106,7 +114,6 @@ struct InteractivePreview: View {
     private let tapeH: CGFloat = 84
     private let printFraction: CGFloat = 0.745
     private let marginDots: CGFloat = 18
-    private let gapDots: CGFloat = 18
     @State private var dragID: LabelCell.ID?
     @State private var dragDX: CGFloat = 0
     @State private var dragDY: CGFloat = 0
@@ -127,7 +134,7 @@ struct InteractivePreview: View {
             let dots = cg?.width ?? 1
             return CellRender(id: cell.id, image: cg, dots: dots, width: CGFloat(dots) * scale)
         }
-        let gap = gapDots * scale
+        let gap = CGFloat(c.cellSpacingDots) * scale
         let margin = marginDots * scale
         let totalW = margin * 2 + items.reduce(0) { $0 + $1.width } + gap * CGFloat(max(0, items.count - 1))
 
@@ -250,8 +257,8 @@ struct PrintOptionsView: View {
                                 value: $c.totalCount, in: 0...99999).frame(maxWidth: 210)
                     }
                     HStack {
-                        Stepper("Spacing: \(String(format: "%.1f", c.spacingMM)) mm",
-                                value: $c.spacingMM, in: 0...30, step: 0.5).frame(maxWidth: 220)
+                        Stepper("Label spacing: \(String(format: "%.1f", c.spacingMM)) mm",
+                                value: $c.spacingMM, in: 0...30, step: 0.5).frame(maxWidth: 230)
                         Toggle("Cut line between labels", isOn: $c.cutLine)
                     }
                     Text("Text tokens: /i index · /c count · /n name · /p phone · /s street · /e email · /d date. Saved labels keep the tokens; the preview shows the expansions.")
@@ -382,7 +389,7 @@ struct FavoritesSidebar: View {
             if favorites.isEmpty { Text("No favorites yet").foregroundStyle(.secondary) }
             ForEach(favorites) { fav in
                 Group {
-                    if let cg = c.previewImage(fav.cells) {
+                    if let cg = c.previewImage(fav.cells, spacingMM: fav.cellSpacingMM) {
                         Image(decorative: cg, scale: 1).resizable().interpolation(.none)
                             .aspectRatio(CGFloat(cg.width) / CGFloat(cg.height), contentMode: .fit)
                             .frame(height: 34).padding(.horizontal, 3).background(.white)
