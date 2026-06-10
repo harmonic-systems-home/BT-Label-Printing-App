@@ -165,7 +165,6 @@ struct InteractivePreview: View {
 
     private func cellView(_ item: CellRender, imgH: CGFloat, items: [CellRender], gap: CGFloat) -> some View {
         let isDragging = dragID == item.id
-        let selected = c.selectedID == item.id
         return Group {
             if let cg = item.image {
                 Image(decorative: cg, scale: 1).resizable().interpolation(.none).frame(width: item.width, height: imgH)
@@ -173,7 +172,6 @@ struct InteractivePreview: View {
                 Color.gray.opacity(0.2).frame(width: item.width, height: imgH)
             }
         }
-        .overlay(RoundedRectangle(cornerRadius: 2).stroke(selected ? Color.accentColor : .clear, lineWidth: 2))
         .opacity(isDragging ? 0.65 : 1)
         .offset(x: isDragging ? dragDX : 0, y: isDragging ? dragDY : 0)
         .zIndex(isDragging ? 1 : 0)
@@ -212,18 +210,25 @@ struct InteractivePreview: View {
             Color.clear.frame(width: margin)
             ForEach(Array(items.enumerated()), id: \.element.id) { idx, item in
                 if idx > 0 { Color.clear.frame(width: gap) }
+                let sel = item.id == c.selectedID
                 VStack(spacing: 0) {
-                    Text("Cell \(idx + 1)").font(.system(size: 9)).lineLimit(1)
-                    Text(String(format: "%.0f mm", Double(item.dots) * 0.149)).font(.system(size: 8)).foregroundStyle(.secondary)
+                    Text("Cell \(idx + 1)")
+                        .font(.system(size: 9, weight: sel ? .bold : .regular))
+                        .foregroundStyle(sel ? Color.accentColor : Color.primary).lineLimit(1)
+                    Text(String(format: "%.0f mm", Double(item.dots) * 0.149))
+                        .font(.system(size: 8))
+                        .foregroundStyle(sel ? Color.accentColor.opacity(0.85) : .secondary)
                 }
                 .frame(width: max(item.width, 1)).clipped()
                 .overlay(alignment: .bottom) {
                     HStack(spacing: 0) {
-                        Rectangle().frame(width: 1, height: 4)
-                        Rectangle().frame(height: 1)
-                        Rectangle().frame(width: 1, height: 4)
-                    }.foregroundStyle(.secondary.opacity(0.45))
+                        Rectangle().frame(width: 1, height: sel ? 6 : 4)
+                        Rectangle().frame(height: sel ? 2 : 1)
+                        Rectangle().frame(width: 1, height: sel ? 6 : 4)
+                    }.foregroundStyle(sel ? Color.accentColor : .secondary.opacity(0.45))
                 }
+                .contentShape(Rectangle())
+                .onTapGesture { c.selectedID = item.id }
             }
             Color.clear.frame(width: margin)
         }.frame(width: totalW)
