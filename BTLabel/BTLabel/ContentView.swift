@@ -1,4 +1,5 @@
 import SwiftUI
+import SwiftData
 import PTouchKit
 
 private let fontChoices = [
@@ -8,12 +9,12 @@ private let fontChoices = [
 
 struct ContentView: View {
     @EnvironmentObject private var c: PrinterController
-    @State private var favSelection: SavedLabel.ID?
+    @Environment(\.modelContext) private var modelContext
     @State private var showSettings = false
 
     var body: some View {
         NavigationSplitView {
-            FavoritesSidebar(selection: $favSelection).navigationTitle("Favorites")
+            FavoritesSidebar().navigationTitle("Favorites")
         } detail: {
             VStack(spacing: 0) {
                 PrinterStatusBar()
@@ -26,6 +27,7 @@ struct ContentView: View {
             }
         }
         .sheet(isPresented: $showSettings) { SettingsSheet().environmentObject(c) }
+        .onAppear { c.modelContext = modelContext }
     }
 }
 
@@ -329,11 +331,12 @@ struct SymbolPicker: View {
 
 struct FavoritesSidebar: View {
     @EnvironmentObject private var c: PrinterController
-    @Binding var selection: SavedLabel.ID?
+    @Query(sort: \SavedLabelModel.createdAt, order: .reverse) private var favorites: [SavedLabelModel]
+
     var body: some View {
-        List(selection: $selection) {
-            if c.favorites.isEmpty { Text("No favorites yet").foregroundStyle(.secondary) }
-            ForEach(c.favorites) { fav in
+        List {
+            if favorites.isEmpty { Text("No favorites yet").foregroundStyle(.secondary) }
+            ForEach(favorites) { fav in
                 VStack(alignment: .leading, spacing: 4) {
                     if let cg = c.previewImage(fav.cells) {
                         Image(decorative: cg, scale: 1).resizable().interpolation(.none)
@@ -344,10 +347,10 @@ struct FavoritesSidebar: View {
                     }
                     Text(fav.name).font(.caption).lineLimit(1)
                 }
-                .padding(.vertical, 2).tag(fav.id)
+                .padding(.vertical, 2)
                 .contentShape(Rectangle()).onTapGesture { c.load(fav) }
             }
-            .onDelete { idx in c.favorites.remove(atOffsets: idx) }
+            .onDelete { idxs in idxs.forEach { c.delete(favorites[$0]) } }
         }.frame(minWidth: 180)
     }
 }

@@ -1,17 +1,11 @@
 import Foundation
 import SwiftUI
+import SwiftData
 import Combine
 import CoreGraphics
 import AppKit
 import UniformTypeIdentifiers
 import PTouchKit
-
-/// A saved label design (an ordered list of cells).
-struct SavedLabel: Identifiable, Hashable, Codable {
-    var id = UUID()
-    var name: String
-    var cells: [LabelCell]
-}
 
 /// Curated SF Symbols for the picker (prototype; swap for a bundled Apache/MIT
 /// set before commercial release — license).
@@ -41,13 +35,16 @@ final class PrinterController: ObservableObject {
     // Label = ordered cells (default: one text cell).
     @Published var cells: [LabelCell] = [LabelCell(kind: .text, text: "Hello")]
     @Published var selectedID: LabelCell.ID?
-    @Published var favorites: [SavedLabel] = []
+
+    /// Set by the view; favorites are persisted via SwiftData (synced if the
+    /// iCloud capability is enabled).
+    var modelContext: ModelContext?
 
     // Print run.
     @Published var copies = 1
     @Published var startIndex = 1
     @Published var totalCount = 0        // 0 == auto (startIndex + copies - 1)
-    @Published var spacingMM = 4.0
+    @Published var spacingMM = 2.5
     @Published var cutLine = true
 
     // Contact fields used by /n /p /s /e tokens (persisted).
@@ -134,12 +131,19 @@ final class PrinterController: ObservableObject {
     // MARK: - Favorites
 
     func saveFavorite() {
+        guard let ctx = modelContext else { return }
         let label = cells.compactMap { $0.kind == .text ? $0.text : nil }
             .joined(separator: " ").trimmingCharacters(in: .whitespacesAndNewlines)
-        favorites.insert(SavedLabel(name: label.isEmpty ? "Label" : label, cells: cells), at: 0)
+        ctx.insert(SavedLabelModel(name: label.isEmpty ? "Label" : label, cells: cells))
+        try? ctx.save()
     }
 
-    func load(_ fav: SavedLabel) { cells = fav.cells; selectedID = cells.first?.id }
+    func load(_ fav: SavedLabelModel) { cells = fav.cells; selectedID = cells.first?.id }
+
+    func delete(_ fav: SavedLabelModel) {
+        modelContext?.delete(fav)
+        try? modelContext?.save()
+    }
 
     // MARK: - Printing
 
@@ -152,17 +156,25 @@ final class PrinterController: ObservableObject {
 
     func printCurrent() async {
         let n = max(1, copies)
-        let spacing = max(0, Int((spacingMM / 0.149).rounded()))
-        var all: [[UInt8]] = []
+        let gap = max(0, Int((spacingMM / 0.149).rounded()))
+        let strip = 18   // end-margin dots at the very ends of the strip
+        // Render each copy tight (no per-label end margins) and place margins
+        // only at the strip ends + a small gap on each side of the cut line, so
+        // the space around the line is ~2x the end margin (not ~3x).
+        var all: [[UInt8]] = Self.blankRows(strip)
+        var any = false
         for k in 0..<n {
-            guard let r = renderer.render(cells: resolvedCells(index: startIndex + k)) else { continue }
-            if !all.isEmpty {
-                all += Self.blankRows(spacing)
-                if cutLine { all += Self.cutLineRows(); all += Self.blankRows(spacing) }
+            guard let r = renderer.render(cells: resolvedCells(index: startIndex + k),
+                                          endMarginDots: 0) else { continue }
+            if any {
+                all += Self.blankRows(gap)
+                if cutLine { all += Self.cutLineRows(); all += Self.blankRows(gap) }
             }
             all += r.rows
+            any = true
         }
-        guard !all.isEmpty else { message = "Nothing to print"; return }
+        guard any else { message = "Nothing to print"; return }
+        all += Self.blankRows(strip)
         let rows = all
         let length = Double(rows.count) * 0.149 / 10
         await perform(n > 1 ? "Printing \(n) labels…" : "Printing…") { t in

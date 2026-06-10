@@ -6,6 +6,7 @@
 //
 
 import SwiftUI
+import SwiftData
 
 @main
 struct BTLabelApp: App {
@@ -18,5 +19,8 @@ struct BTLabelApp: App {
                 .frame(minWidth: 720, minHeight: 480)
         }
         .defaultSize(width: 820, height: 560)
+        // Local persistence now; automatically CloudKit-synced once the iCloud
+        // capability is added in Xcode (the model is CloudKit-compatible).
+        .modelContainer(for: SavedLabelModel.self)
     }
 }
