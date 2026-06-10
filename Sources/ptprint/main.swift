@@ -42,6 +42,11 @@ guard let rendered = renderer.render(text: text, fontName: font, sizing: sizing,
 }
 let rows = rendered.rows
 
+// Diagnostic: vertical dot extent actually used.
+var dlo = 128, dhi = -1
+for line in rows { for dot in 0..<128 where (line[dot / 8] & (0x80 >> (dot % 8))) != 0 { dlo = min(dlo, dot); dhi = max(dhi, dot) } }
+err("SWIFT raster: \(rows.count) lines, dot rows \(dlo)..\(dhi) = \(dhi - dlo + 1) tall (of 128)")
+
 // Preview mode: write the readable label image to a PNG and exit (no printer).
 if let path = previewPath {
     let url = URL(fileURLWithPath: path)

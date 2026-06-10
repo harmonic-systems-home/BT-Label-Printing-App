@@ -45,8 +45,8 @@ public struct LabelRenderer {
                        imageURL: URL? = nil,
                        mergeGapDots: Int = 24,
                        sideMarginDots: Int = 12,
-                       lineSpacing: CGFloat = 1.12,
-                       fillFraction: CGFloat = 0.95) -> RenderedLabel? {
+                       lineSpacing: CGFloat = 1.05,
+                       fillFraction: CGFloat = 1.0) -> RenderedLabel? {
         let H = printableHeight
         var parts: [Gray] = []
         if let url = imageURL, let img = loadImageGray(url, height: H) { parts.append(img) }
