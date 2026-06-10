@@ -282,8 +282,22 @@ struct FavoritesSidebar: View {
         List(selection: $selection) {
             if c.favorites.isEmpty { Text("No favorites yet").foregroundStyle(.secondary) }
             ForEach(c.favorites) { fav in
-                Text(fav.name).lineLimit(1).tag(fav.id)
-                    .contentShape(Rectangle()).onTapGesture { c.load(fav) }
+                VStack(alignment: .leading, spacing: 4) {
+                    if let cg = c.previewImage(fav.cells) {
+                        Image(decorative: cg, scale: 1)
+                            .resizable().interpolation(.none)
+                            .aspectRatio(CGFloat(cg.width) / CGFloat(cg.height), contentMode: .fit)
+                            .frame(height: 26)
+                            .padding(.horizontal, 3)
+                            .background(.white)
+                            .clipShape(RoundedRectangle(cornerRadius: 3))
+                            .frame(maxWidth: 168, alignment: .leading).clipped()
+                    }
+                    Text(fav.name).font(.caption).lineLimit(1)
+                }
+                .padding(.vertical, 2)
+                .tag(fav.id)
+                .contentShape(Rectangle()).onTapGesture { c.load(fav) }
             }
             .onDelete { idx in c.favorites.remove(atOffsets: idx) }
         }.frame(minWidth: 180)

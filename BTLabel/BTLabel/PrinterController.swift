@@ -48,6 +48,9 @@ final class PrinterController: ObservableObject {
 
     var rendered: RenderedLabel? { renderer.render(cells: cells) }
     var isBusy: Bool { activity == .working }
+
+    /// A preview image for an arbitrary cell list (e.g. a favorite's thumbnail).
+    func previewImage(_ cells: [LabelCell]) -> CGImage? { renderer.render(cells: cells)?.preview }
     var selectedIndex: Int? { cells.firstIndex { $0.id == selectedID } }
 
     init() { selectedID = cells.first?.id }
