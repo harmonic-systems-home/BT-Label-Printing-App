@@ -78,6 +78,8 @@ final class PrinterController: ObservableObject {
 
     init() {
         selectedID = cells.first?.id
+        // Start a fresh strip on the most recently used tape (persisted).
+        (designTape, designText) = lastKnownTape
     }
 
     var isBusy: Bool { activity == .working }
@@ -124,6 +126,21 @@ final class PrinterController: ObservableObject {
     // MARK: - Tape colour (design tape + tinting)
 
     func setDesignTape(_ p: TapePreset) { designTape = p.tape; designText = p.text; designTapeIsAuto = false }
+
+    /// The most recently seen installed tape: the live status if connected,
+    /// otherwise the last one we saw (persisted across launches), else black/white.
+    var lastKnownTape: (tape: UInt8, text: UInt8) {
+        if let s = status { return (s.tapeColor, s.textColor) }
+        let d = UserDefaults.standard
+        guard d.object(forKey: "lastTapeColor") != nil else { return (0x01, 0x08) }
+        return (UInt8(clamping: d.integer(forKey: "lastTapeColor")),
+                UInt8(clamping: d.integer(forKey: "lastTapeText")))
+    }
+
+    private func rememberTape(_ tape: UInt8, _ text: UInt8) {
+        let d = UserDefaults.standard
+        d.set(Int(tape), forKey: "lastTapeColor"); d.set(Int(text), forKey: "lastTapeText")
+    }
 
     /// Recolour a grayscale label/cell image to a tape: ink (dark) → text colour,
     /// background (light) → tape colour. Display only — the printed raster is
@@ -334,9 +351,9 @@ final class PrinterController: ObservableObject {
         cells = [LabelCell(kind: .text, text: "Text")]
         cellSpacingMM = 2.7
         selectedID = cells.first?.id
-        // A new label follows the installed tape again.
+        // A new label follows the most recently used tape again.
         designTapeIsAuto = true
-        if let s = status { designTape = s.tapeColor; designText = s.textColor }
+        (designTape, designText) = lastKnownTape
     }
 
     func delete(_ fav: SavedLabelModel) {
@@ -415,6 +432,7 @@ final class PrinterController: ObservableObject {
         let result = await BluetoothRunner.run(name: deviceName, op: op)
         if let s = result.status {
             status = s
+            rememberTape(s.tapeColor, s.textColor)   // persist for the next launch
             // Follow the installed tape in the preview/picker until the user picks one.
             if designTapeIsAuto { designTape = s.tapeColor; designText = s.textColor }
         }
