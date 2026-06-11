@@ -332,7 +332,9 @@ public struct LabelRenderer {
         let H = g.height
         guard let ctx = grayContext(g.width, H), let data = ctx.data else { return nil }
         let ptr = data.bindMemory(to: UInt8.self, capacity: ctx.bytesPerRow * H)
-        for r in 0..<H { for c in 0..<g.width { ptr[r * ctx.bytesPerRow + c] = g.px[r * g.width + c] } }
+        // Threshold the preview the same way the printer does (1-bit at 128), so the
+        // on-screen preview shows exactly what will print — not a smoother grayscale.
+        for r in 0..<H { for c in 0..<g.width { ptr[r * ctx.bytesPerRow + c] = g.px[r * g.width + c] < 128 ? 0 : 255 } }
         guard let preview = ctx.makeImage() else { return nil }
 
         let bytesPerRow = bufferWidth / 8
