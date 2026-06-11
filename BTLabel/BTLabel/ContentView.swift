@@ -1,5 +1,6 @@
 import SwiftUI
 import SwiftData
+import AppKit
 import PTouchKit
 
 private let fontChoices = [
@@ -152,6 +153,41 @@ struct TapeBackground: View {
     }
 }
 
+/// A bitmap swatch (tape background + an "A" in the text colour) for use as a
+/// menu-item icon — macOS menus render an NSImage reliably but not a custom view.
+func tapeSwatchImage(tape: UInt8, text: UInt8) -> NSImage {
+    func ns(_ code: UInt8) -> NSColor {
+        let c = TapeColor.rgb(code)
+        return NSColor(red: CGFloat(c.r) / 255, green: CGFloat(c.g) / 255, blue: CGFloat(c.b) / 255, alpha: 1)
+    }
+    let size = NSSize(width: 28, height: 16)
+    let img = NSImage(size: size)
+    img.lockFocus()
+    let rect = NSRect(origin: .zero, size: size).insetBy(dx: 0.5, dy: 0.5)
+    let path = NSBezierPath(roundedRect: rect, xRadius: 3, yRadius: 3)
+    NSGraphicsContext.saveGraphicsState(); path.addClip()
+    if TapeColor.isClear(tape) {
+        NSColor(white: 0.96, alpha: 1).setFill(); NSBezierPath(rect: rect).fill()
+        NSColor(white: 0.70, alpha: 1).setFill()
+        let sq: CGFloat = 4; var y: CGFloat = 0; var row = 0
+        while y < size.height {
+            var x: CGFloat = (row % 2 == 0) ? 0 : sq
+            while x < size.width { NSBezierPath(rect: NSRect(x: x, y: y, width: sq, height: sq)).fill(); x += 2 * sq }
+            y += sq; row += 1
+        }
+    } else {
+        ns(tape).setFill(); NSBezierPath(rect: rect).fill()
+    }
+    NSGraphicsContext.restoreGraphicsState()
+    NSColor.gray.withAlphaComponent(0.5).setStroke(); path.lineWidth = 1; path.stroke()
+    let attrs: [NSAttributedString.Key: Any] = [.font: NSFont.boldSystemFont(ofSize: 11), .foregroundColor: ns(text)]
+    let s = NSAttributedString(string: "A", attributes: attrs); let ss = s.size()
+    s.draw(at: NSPoint(x: (size.width - ss.width) / 2, y: (size.height - ss.height) / 2))
+    img.unlockFocus()
+    img.isTemplate = false
+    return img
+}
+
 /// A small swatch showing a tape (background) and its text colour (an "A").
 struct TapeSwatch: View {
     let tape: UInt8
@@ -175,11 +211,12 @@ struct TapeMenu: View {
             TapeSwatch(tape: c.designTape, text: c.designText)
             Menu {
                 ForEach(TapePreset.all) { p in
+                    let on = c.designTape == p.tape && c.designText == p.text
                     Button { c.setDesignTape(p) } label: {
-                        if c.designTape == p.tape && c.designText == p.text {
-                            Label(p.name, systemImage: "checkmark")
-                        } else {
-                            Text(p.name)
+                        Label {
+                            Text(on ? "\(p.name)  ✓" : p.name)
+                        } icon: {
+                            Image(nsImage: tapeSwatchImage(tape: p.tape, text: p.text)).renderingMode(.original)
                         }
                     }
                 }
