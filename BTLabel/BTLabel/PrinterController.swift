@@ -473,8 +473,8 @@ extension Array {
 
 enum TapeColor {
     /// Display RGB for a tape/text colour code. Confirmed on this unit: white tape
-    /// 0x01, black text 0x08; the other codes are best-effort until validated
-    /// against physical coloured tapes.
+    /// 0x01, black tape/text 0x08, gold text 0x0A (TZe-334); the remaining colour
+    /// codes are best-effort until validated against physical tapes.
     static func rgb(_ code: UInt8) -> (r: UInt8, g: UInt8, b: UInt8) {
         switch code {
         case 0x01: return (255, 255, 255)       // white
@@ -483,7 +483,7 @@ enum TapeColor {
         case 0x06: return (247, 214, 51)        // yellow
         case 0x07: return (40, 160, 78)         // green
         case 0x08: return (26, 26, 28)          // black
-        case 0x0A: return (201, 167, 74)        // gold (text code provisional)
+        case 0x0A: return (201, 167, 74)        // gold (text, confirmed TZe-334)
         case 0x40: return (255, 122, 26)        // fluorescent orange
         case 0x41: return (214, 247, 38)        // fluorescent yellow
         case 0x03, 0x09: return (244, 244, 246) // clear / other (light)
