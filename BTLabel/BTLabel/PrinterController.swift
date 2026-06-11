@@ -127,19 +127,27 @@ final class PrinterController: ObservableObject {
 
     func setDesignTape(_ p: TapePreset) { designTape = p.tape; designText = p.text; designTapeIsAuto = false }
 
+    // Last-tape memory is per printer (keyed by device name), persisted locally.
+    // (Eventually this should live in cloud storage keyed by computer + printer,
+    // once remote printing lands.)
+    private func tapeKey(_ field: String) -> String { "lastTape.\(field).\(deviceName)" }
+
     /// The most recently seen installed tape: the live status if connected,
-    /// otherwise the last one we saw (persisted across launches), else black/white.
+    /// otherwise the last one we saw for this printer (persisted across launches),
+    /// else black-on-white.
     var lastKnownTape: (tape: UInt8, text: UInt8) {
         if let s = status { return (s.tapeColor, s.textColor) }
         let d = UserDefaults.standard
-        guard d.object(forKey: "lastTapeColor") != nil else { return (0x01, 0x08) }
-        return (UInt8(clamping: d.integer(forKey: "lastTapeColor")),
-                UInt8(clamping: d.integer(forKey: "lastTapeText")))
+        guard d.object(forKey: tapeKey("color")) != nil else { return (0x01, 0x08) }
+        return (UInt8(clamping: d.integer(forKey: tapeKey("color"))),
+                UInt8(clamping: d.integer(forKey: tapeKey("text"))))
     }
 
     private func rememberTape(_ tape: UInt8, _ text: UInt8) {
         let d = UserDefaults.standard
-        d.set(Int(tape), forKey: "lastTapeColor"); d.set(Int(text), forKey: "lastTapeText")
+        d.set(Int(tape), forKey: tapeKey("color"))
+        d.set(Int(text), forKey: tapeKey("text"))
+        d.synchronize()   // flush now — quit-on-close may terminate immediately after
     }
 
     /// Recolour a grayscale label/cell image to a tape: ink (dark) → text colour,
