@@ -34,9 +34,16 @@ struct PurchaseView: View {
                 Button("Restore Purchase") {
                     Task { await store.restore(); if store.isUnlocked { dismiss() } }
                 }.buttonStyle(.link)
-            } else {
+            } else if !store.loaded {
                 ProgressView().controlSize(.small)
                 Text("Loading store…").font(.caption).foregroundStyle(.secondary)
+            } else {
+                Text("The store is unavailable. In Xcode, select a StoreKit configuration (Edit Scheme → Run → Options); on a shipped build this means the App Store is unreachable.")
+                    .font(.caption).foregroundStyle(.secondary).multilineTextAlignment(.center)
+                Button("Try Again") { Task { await store.loadProduct() } }
+                Button("Restore Purchase") {
+                    Task { await store.restore(); if store.isUnlocked { dismiss() } }
+                }.buttonStyle(.link)
             }
 
             if let err = store.purchaseError {

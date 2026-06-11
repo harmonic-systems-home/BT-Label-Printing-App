@@ -13,6 +13,9 @@ final class StoreManager: ObservableObject {
 
     @Published private(set) var product: Product?
     @Published private(set) var isUnlocked = false
+    /// True once a product fetch has completed (regardless of success), so the UI
+    /// can distinguish "still loading" from "store unavailable".
+    @Published private(set) var loaded = false
     @Published var purchaseError: String?
 
     private var updates: Task<Void, Never>?
@@ -29,6 +32,7 @@ final class StoreManager: ObservableObject {
 
     func loadProduct() async {
         product = try? await Product.products(for: [Self.unlockProductID]).first
+        loaded = true
     }
 
     /// Reflect any existing entitlement (prior purchase, restored, or synced).
