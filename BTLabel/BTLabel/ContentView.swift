@@ -348,22 +348,20 @@ struct InteractivePreview: View {
             ForEach(Array(items.enumerated()), id: \.element.id) { idx, item in
                 if idx > 0 { Color.clear.frame(width: gap) }
                 let sel = item.id == c.selectedID
-                VStack(spacing: 0) {
+                VStack(spacing: 1) {
                     Text("Cell \(idx + 1)")
                         .font(.system(size: 9, weight: sel ? .bold : .regular))
                         .foregroundStyle(sel ? Color.accentColor : Color.primary).lineLimit(1)
                     Text(String(format: "%.0f mm", Double(item.dots) * 0.149))
                         .font(.system(size: 8))
                         .foregroundStyle(sel ? Color.accentColor.opacity(0.85) : .secondary)
-                }
-                .frame(width: max(item.width, 1)).clipped()
-                .overlay(alignment: .bottom) {
                     HStack(spacing: 0) {
                         Rectangle().frame(width: 1, height: sel ? 6 : 4)
                         Rectangle().frame(height: sel ? 2 : 1)
                         Rectangle().frame(width: 1, height: sel ? 6 : 4)
                     }.foregroundStyle(sel ? Color.accentColor : .secondary.opacity(0.45))
                 }
+                .frame(width: max(item.width, 1)).clipped()
                 .contentShape(Rectangle())
                 .onTapGesture { c.selectedID = item.id }
             }
