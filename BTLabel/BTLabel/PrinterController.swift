@@ -7,20 +7,15 @@ import AppKit
 import UniformTypeIdentifiers
 import PTouchKit
 
-/// Curated SF Symbols for the picker (prototype; swap for a bundled Apache/MIT
-/// set before commercial release — license).
+/// The bundled, MIT-licensed Bootstrap Icons set (rendered from PTouchKit's
+/// pre-rasterized PNGs). The picker filters this list by name.
 enum SymbolCatalog {
-    static let names: [String] = [
-        "clock", "alarm", "timer", "calendar", "sun.max", "moon.stars", "sparkles",
-        "star.fill", "staroflife.fill", "bolt.fill", "flame.fill", "drop.fill",
-        "heart.fill", "checkmark.seal.fill", "xmark.octagon.fill",
-        "exclamationmark.triangle.fill", "info.circle.fill", "arrow.right", "arrow.up",
-        "location.fill", "house.fill", "building.2.fill", "phone.fill", "envelope.fill",
-        "wifi", "battery.100", "leaf.fill", "pawprint.fill", "gift.fill", "cart.fill",
-        "bag.fill", "wrench.and.screwdriver.fill", "trash.fill", "flag.fill", "tag.fill",
-        "key.fill", "lock.fill", "music.note", "camera.fill", "car.fill", "airplane",
-        "cup.and.saucer.fill", "fork.knife", "cross.case.fill", "pills.fill",
-    ]
+    static var names: [String] { BootstrapIcons.names }
+    /// A friendly initial selection (falls back to the first available name).
+    static var defaultName: String? {
+        let names = BootstrapIcons.names
+        return ["star-fill", "star", "heart-fill"].first(where: names.contains) ?? names.first
+    }
 }
 
 @MainActor
@@ -37,9 +32,10 @@ final class PrinterController: ObservableObject {
     @Published var selectedID: LabelCell.ID?
     @Published var cellSpacingMM = 2.7
 
-    /// Set by the view; favorites are persisted via SwiftData (synced if the
-    /// iCloud capability is enabled).
-    var modelContext: ModelContext?
+    /// Set by the view; favorites, history, and settings are persisted via
+    /// SwiftData (synced if the iCloud capability is enabled). Setting it loads
+    /// the contact settings.
+    var modelContext: ModelContext? { didSet { loadSettings() } }
 
     // Print run.
     @Published var copies = 1
@@ -48,7 +44,8 @@ final class PrinterController: ObservableObject {
     @Published var spacingMM = 2.5
     @Published var cutLine = true
 
-    // Contact fields used by /n /p /s /e tokens (persisted).
+    // Contact fields used by /n /p /s /e tokens. Persisted via SwiftData/iCloud
+    // (see AppSettings) so they sync across devices and survive restarts.
     @Published var contactName = ""  { didSet { saveContact() } }
     @Published var contactPhone = "" { didSet { saveContact() } }
     @Published var contactStreet = "" { didSet { saveContact() } }
@@ -56,9 +53,14 @@ final class PrinterController: ObservableObject {
 
     private let renderer = LabelRenderer()
 
+    /// The persisted settings record (loaded once `modelContext` is set).
+    private var settings: AppSettings?
+    /// Suppresses `saveContact()` while we populate the fields from the store,
+    /// so loading one field can't write empty siblings back over the store.
+    private var isLoadingSettings = false
+
     init() {
         selectedID = cells.first?.id
-        loadContact()
     }
 
     var isBusy: Bool { activity == .working }
@@ -114,7 +116,7 @@ final class PrinterController: ObservableObject {
         var c = LabelCell(kind: kind)
         switch kind {
         case .text: c.text = "Text"
-        case .symbol: c.symbolName = SymbolCatalog.names.first
+        case .symbol: c.symbolName = SymbolCatalog.defaultName
         case .image: break
         }
         let at = (selectedIndex.map { $0 + 1 }) ?? cells.count
@@ -138,21 +140,115 @@ final class PrinterController: ObservableObject {
     func pickImage(for id: LabelCell.ID) {
         guard let idx = cells.firstIndex(where: { $0.id == id }) else { return }
         let panel = NSOpenPanel()
-        panel.allowedContentTypes = [.png, .jpeg, .pdf]
+        panel.allowedContentTypes = [.png, .jpeg, .svg, .pdf]
         panel.allowsMultipleSelection = false; panel.canChooseDirectories = false
         if panel.runModal() == .OK, let url = panel.url {
-            cells[idx].kind = .image; cells[idx].imagePath = url.path
+            cells[idx].kind = .image; cells[idx].imagePath = url.path; cells[idx].imageData = nil
         }
     }
 
-    // MARK: - Favorites
+    /// Paste an image from the clipboard as a new image cell. The image is
+    /// downsized to the printable resolution and embedded directly in the cell —
+    /// nothing is written to disk and no original file is kept.
+    func pasteImage() {
+        guard let png = Self.pngFromPasteboard(NSPasteboard.general) else {
+            message = "No image on the clipboard"; return
+        }
+        let downsized = renderer.downsizedImagePNG(for: LabelCell(kind: .image, imageData: png)) ?? png
+        let cell = LabelCell(kind: .image, imageData: downsized)
+        let at = (selectedIndex.map { $0 + 1 }) ?? cells.count
+        cells.insert(cell, at: at); selectedID = cell.id
+        message = "Pasted image"
+    }
+
+    private static func pngFromPasteboard(_ pb: NSPasteboard) -> Data? {
+        guard let img = NSImage(pasteboard: pb), let tiff = img.tiffRepresentation,
+              let rep = NSBitmapImageRep(data: tiff) else { return nil }
+        return rep.representation(using: .png, properties: [:])
+    }
+
+    /// Copy a cell to the system clipboard so it can be reused. Image and symbol
+    /// cells are copied as their rasterized image (Paste re-inserts them as an
+    /// image cell — usable here, in another label, or in another app); text cells
+    /// are copied as plain text.
+    func copyCell(_ id: LabelCell.ID) {
+        guard let cell = cells.first(where: { $0.id == id }) else { return }
+        let pb = NSPasteboard.general
+        pb.clearContents()
+        switch cell.kind {
+        case .text:
+            pb.setString(cell.text, forType: .string)
+            message = "Copied text"
+        case .image, .symbol:
+            guard let cg = cellImage(cell) else { message = "Nothing to copy"; return }
+            pb.writeObjects([NSImage(cgImage: cg, size: NSSize(width: cg.width, height: cg.height))])
+            message = "Copied image — use Paste to reuse it"
+        }
+    }
+
+    // MARK: - Favorites & History
+
+    static let historyCap = 100
+
+    /// A display name derived from the label's text cells.
+    private func labelName(_ cells: [LabelCell]) -> String {
+        let label = cells.compactMap { $0.kind == .text ? $0.text : nil }
+            .joined(separator: " ").trimmingCharacters(in: .whitespacesAndNewlines)
+        return label.isEmpty ? "Label" : label
+    }
+
+    /// Bake each image cell down to its embedded pixel image so saved labels are
+    /// self-contained (no source file, sync-safe). Idempotent and cheap; already-
+    /// embedded cells are left as-is. The original file reference is dropped.
+    private func bakeImages(_ cells: [LabelCell]) -> [LabelCell] {
+        cells.map { cell in
+            guard cell.kind == .image, cell.imageData == nil,
+                  let png = renderer.downsizedImagePNG(for: cell) else { return cell }
+            var c = cell; c.imageData = png; c.imagePath = nil; return c
+        }
+    }
 
     func saveFavorite() {
         guard let ctx = modelContext else { return }
-        let label = cells.compactMap { $0.kind == .text ? $0.text : nil }
-            .joined(separator: " ").trimmingCharacters(in: .whitespacesAndNewlines)
-        ctx.insert(SavedLabelModel(name: label.isEmpty ? "Label" : label, cells: cells,
-                                   cellSpacingMM: cellSpacingMM))
+        let baked = bakeImages(cells)
+        ctx.insert(SavedLabelModel(name: labelName(baked), cells: baked,
+                                   cellSpacingMM: cellSpacingMM, kind: .favorite))
+        try? ctx.save()
+    }
+
+    /// Promote a history entry to Favorites (copy; the history record stays).
+    func saveFavorite(from item: SavedLabelModel) {
+        guard let ctx = modelContext else { return }
+        ctx.insert(SavedLabelModel(name: item.name, cells: item.cells,
+                                   cellSpacingMM: item.cellSpacingMM, kind: .favorite))
+        try? ctx.save()
+    }
+
+    /// Record a printed label in History. Distinct by content: an identical entry
+    /// is moved to the top instead of duplicated. History is capped.
+    private func logHistory(cells rawCells: [LabelCell], spacingMM: Double) {
+        guard let ctx = modelContext else { return }
+        let cells = bakeImages(rawCells)
+        let hash = SavedLabelModel.hash(cells: cells, spacingMM: spacingMM)
+        let history = SavedLabelModel.Kind.history.rawValue
+        let existing = try? ctx.fetch(FetchDescriptor<SavedLabelModel>(
+            predicate: #Predicate { $0.kind == history && $0.contentHash == hash }))
+        if let dup = existing?.first {
+            dup.createdAt = Date(); try? ctx.save(); return
+        }
+        ctx.insert(SavedLabelModel(name: labelName(cells), cells: cells,
+                                   cellSpacingMM: spacingMM, kind: .history))
+        try? ctx.save()
+        trimHistory(ctx)
+    }
+
+    private func trimHistory(_ ctx: ModelContext) {
+        let history = SavedLabelModel.Kind.history.rawValue
+        let all = (try? ctx.fetch(FetchDescriptor<SavedLabelModel>(
+            predicate: #Predicate { $0.kind == history },
+            sortBy: [SortDescriptor(\.createdAt, order: .reverse)]))) ?? []
+        guard all.count > Self.historyCap else { return }
+        for item in all[Self.historyCap...] { ctx.delete(item) }
         try? ctx.save()
     }
 
@@ -174,9 +270,9 @@ final class PrinterController: ObservableObject {
     // MARK: - Printing
 
     func refreshStatus() async {
-        await perform("Connecting…") { t in
+        _ = await perform("Connecting…") { t in
             let s = try t.queryStatus(timeout: 6)
-            return (s, "Tape \(s.mediaWidthMM)mm — \(s.isReadyToPrint ? "ready" : "not ready")")
+            return (s, "Tape \(s.mediaWidthMM)mm — \(s.isReadyToPrint ? "ready" : "not ready")", true)
         }
     }
 
@@ -203,12 +299,14 @@ final class PrinterController: ObservableObject {
         all += Self.blankRows(strip)
         let rows = all
         let length = Double(rows.count) * 0.149 / 10
-        await perform(n > 1 ? "Printing \(n) labels…" : "Printing…") { t in
+        let snapshotCells = cells, snapshotSpacing = cellSpacingMM
+        let printed = await perform(n > 1 ? "Printing \(n) labels…" : "Printing…") { t in
             let s = try t.queryStatus(timeout: 6)
-            guard s.isReadyToPrint else { return (s, "Printer not ready: \(s.summary)") }
+            guard s.isReadyToPrint else { return (s, "Printer not ready: \(s.summary)", false) }
             _ = try PrintJob.send(rows: rows, status: s, to: t)
-            return (s, String(format: "Printed %d (~%.1f cm)", n, length))
+            return (s, String(format: "Printed %d (~%.1f cm)", n, length), true)
         }
+        if printed { logHistory(cells: snapshotCells, spacingMM: snapshotSpacing) }
     }
 
     private static func blankRows(_ n: Int) -> [[UInt8]] {
@@ -220,47 +318,66 @@ final class PrinterController: ObservableObject {
         return [row, row]
     }
 
+    /// Runs a Bluetooth op on the dedicated thread. Returns whether the op
+    /// reported success (its third tuple element), e.g. a print actually happened.
+    @discardableResult
     private func perform(_ starting: String,
-                         _ op: @escaping @Sendable (RFCOMMTransport) throws -> (PrinterStatus?, String)) async {
-        guard activity == .idle else { return }
+                         _ op: @escaping @Sendable (RFCOMMTransport) throws -> (PrinterStatus?, String, Bool)) async -> Bool {
+        guard activity == .idle else { return false }
         activity = .working; message = starting
         let result = await BluetoothRunner.run(name: deviceName, op: op)
         if let s = result.status { status = s }
         message = result.message; activity = .idle
+        return result.ok
     }
 
-    // MARK: - Contact persistence
+    // MARK: - Contact persistence (SwiftData / iCloud)
+
+    /// Load the contact fields from the persisted settings (fetch-or-create).
+    private func loadSettings() {
+        guard let ctx = modelContext else { return }
+        let all = (try? ctx.fetch(FetchDescriptor<AppSettings>(
+            sortBy: [SortDescriptor(\.updatedAt, order: .reverse)]))) ?? []
+        // If sync produced more than one settings row, keep the newest and prune.
+        if all.count > 1 {
+            for extra in all.dropFirst() { ctx.delete(extra) }
+            try? ctx.save()
+        }
+        let s = all.first ?? {
+            let new = AppSettings(); ctx.insert(new); return new
+        }()
+        settings = s
+        isLoadingSettings = true
+        contactName = s.contactName; contactPhone = s.contactPhone
+        contactStreet = s.contactStreet; contactEmail = s.contactEmail
+        isLoadingSettings = false
+    }
 
     private func saveContact() {
-        let d = UserDefaults.standard
-        d.set(contactName, forKey: "contactName"); d.set(contactPhone, forKey: "contactPhone")
-        d.set(contactStreet, forKey: "contactStreet"); d.set(contactEmail, forKey: "contactEmail")
-    }
-    private func loadContact() {
-        let d = UserDefaults.standard
-        contactName = d.string(forKey: "contactName") ?? ""
-        contactPhone = d.string(forKey: "contactPhone") ?? ""
-        contactStreet = d.string(forKey: "contactStreet") ?? ""
-        contactEmail = d.string(forKey: "contactEmail") ?? ""
+        guard !isLoadingSettings, let ctx = modelContext, let s = settings else { return }
+        s.contactName = contactName; s.contactPhone = contactPhone
+        s.contactStreet = contactStreet; s.contactEmail = contactEmail
+        s.updatedAt = Date()
+        try? ctx.save()
     }
 }
 
-private struct BTResult: Sendable { let status: PrinterStatus?; let message: String }
+private struct BTResult: Sendable { let status: PrinterStatus?; let message: String; let ok: Bool }
 
 private enum BluetoothRunner {
     static func run(name: String,
-                    op: @escaping @Sendable (RFCOMMTransport) throws -> (PrinterStatus?, String)) async -> BTResult {
+                    op: @escaping @Sendable (RFCOMMTransport) throws -> (PrinterStatus?, String, Bool)) async -> BTResult {
         await withCheckedContinuation { (cont: CheckedContinuation<BTResult, Never>) in
             let thread = Thread {
                 let t = RFCOMMTransport()
                 do {
                     try t.connect(nameMatch: name, timeout: 15)
-                    let (s, msg) = try op(t)
+                    let (s, msg, ok) = try op(t)
                     t.disconnect()
-                    cont.resume(returning: BTResult(status: s, message: msg))
+                    cont.resume(returning: BTResult(status: s, message: msg, ok: ok))
                 } catch {
                     t.disconnect()
-                    cont.resume(returning: BTResult(status: nil, message: "\(error)"))
+                    cont.resume(returning: BTResult(status: nil, message: "\(error)", ok: false))
                 }
             }
             thread.stackSize = 1 << 20; thread.name = "bluetooth.transport"; thread.start()

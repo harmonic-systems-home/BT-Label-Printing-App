@@ -14,7 +14,7 @@ struct ContentView: View {
 
     var body: some View {
         NavigationSplitView {
-            FavoritesSidebar().navigationTitle("Favorites")
+            FavoritesSidebar().navigationTitle("Labels")
         } detail: {
             VStack(spacing: 0) {
                 PrinterStatusBar()
@@ -77,8 +77,11 @@ struct EditorPanel: View {
                 Spacer()
                 HStack(spacing: 8) {
                     Button { c.addCell(.text) } label: { Label("Aa", systemImage: "plus") }
-                    Button { c.addCell(.image) } label: { Label("Image", systemImage: "plus") }
                     Button { c.addCell(.symbol) } label: { Label("Symbol", systemImage: "plus") }
+                    Button { c.addCell(.image) } label: { Label("Image", systemImage: "plus") }
+                    Button { c.pasteImage() } label: { Label("Paste", systemImage: "doc.on.clipboard") }
+                        .keyboardShortcut("v", modifiers: [.command, .shift])
+                        .help("Paste an image from the clipboard as a new cell (⇧⌘V)")
                 }
                 Spacer()
                 Button { c.saveFavorite() } label: { Label("Save to Favorites", systemImage: "star") }
@@ -132,7 +135,11 @@ struct InteractivePreview: View {
         let items: [CellRender] = c.cells.map { cell in
             let cg = c.cellImage(cell)
             let dots = cg?.width ?? 1
-            return CellRender(id: cell.id, image: cg, dots: dots, width: CGFloat(dots) * scale)
+            // A cell that fails to render (e.g. an old image cell whose file the
+            // sandbox can't read) would be ~1px wide and impossible to select or
+            // delete — give it a visible placeholder width.
+            let width = cg == nil ? max(CGFloat(dots) * scale, 26) : CGFloat(dots) * scale
+            return CellRender(id: cell.id, image: cg, dots: dots, width: width)
         }
         let gap = CGFloat(c.cellSpacingDots) * scale
         let margin = marginDots * scale
@@ -168,6 +175,11 @@ struct InteractivePreview: View {
         .background(Color(nsColor: .controlBackgroundColor))
         .clipShape(RoundedRectangle(cornerRadius: 8))
         .overlay(RoundedRectangle(cornerRadius: 8).stroke(.secondary.opacity(0.3)))
+        // Right-click empty space in the preview to paste a clipboard image as a
+        // new cell (per-cell menus take precedence when right-clicking a cell).
+        .contextMenu {
+            Button { c.pasteImage() } label: { Label("Paste Image", systemImage: "doc.on.clipboard") }
+        }
     }
 
     private func cellView(_ item: CellRender, imgH: CGFloat, items: [CellRender], gap: CGFloat) -> some View {
@@ -184,6 +196,7 @@ struct InteractivePreview: View {
         .zIndex(isDragging ? 1 : 0)
         .onTapGesture { c.selectedID = item.id }
         .contextMenu {
+            Button { c.copyCell(item.id) } label: { Label("Copy", systemImage: "doc.on.doc") }
             Button(role: .destructive) { c.delete(id: item.id) } label: { Label("Delete Cell", systemImage: "trash") }
         }
         .gesture(
@@ -322,6 +335,11 @@ struct CellEditorView: View {
                         }.frame(width: 150)
                     }
                     Spacer()
+                    Button(role: .destructive) { c.delete(id: cell.id) } label: {
+                        Label("Delete Cell", systemImage: "trash")
+                    }
+                    .disabled(c.cells.count <= 1)
+                    .help("Remove this cell from the label")
                 }
                 switch cell.kind {
                 case .text: textControls
@@ -331,7 +349,7 @@ struct CellEditorView: View {
             }.padding(6)
         }
         .onChange(of: cell.kind) { _, k in
-            if k == .symbol, cell.symbolName == nil { cell.symbolName = SymbolCatalog.names.first }
+            if k == .symbol, cell.symbolName == nil { cell.symbolName = SymbolCatalog.defaultName }
             if k == .text, cell.text.isEmpty { cell.text = "Text" }
         }
     }
@@ -350,8 +368,10 @@ struct CellEditorView: View {
             Button { c.pickImage(for: cell.id) } label: { Label("Choose Image…", systemImage: "photo") }
             if let p = cell.imagePath {
                 Text((p as NSString).lastPathComponent).lineLimit(1).truncationMode(.middle).foregroundStyle(.secondary)
+            } else if cell.imageData != nil {
+                Text("Embedded image").font(.caption2).foregroundStyle(.secondary)
             } else {
-                Text("PNG, JPEG, or single-page PDF.").font(.caption2).foregroundStyle(.secondary)
+                Text("PNG, JPEG, SVG, or single-page PDF.").font(.caption2).foregroundStyle(.secondary)
             }
             Spacer()
         }
@@ -360,21 +380,49 @@ struct CellEditorView: View {
 
 struct SymbolPicker: View {
     @Binding var selection: String?
-    private let cols = [GridItem(.adaptive(minimum: 38), spacing: 8)]
+    @State private var search = ""
+    private let cols = [GridItem(.adaptive(minimum: 40), spacing: 8)]
+
     var body: some View {
+        let names = BootstrapIcons.search(search)
         VStack(alignment: .leading, spacing: 6) {
-            Text("Symbol").font(.caption).foregroundStyle(.secondary)
+            HStack(spacing: 8) {
+                Text("Symbol").font(.caption).foregroundStyle(.secondary)
+                Spacer()
+                TextField("Filter icons…", text: $search)
+                    .textFieldStyle(.roundedBorder).frame(width: 170)
+                Text("\(names.count)").font(.caption2).foregroundStyle(.secondary).monospacedDigit()
+            }
             ScrollView {
                 LazyVGrid(columns: cols, spacing: 8) {
-                    ForEach(SymbolCatalog.names, id: \.self) { name in
-                        Image(systemName: name).font(.title2).frame(width: 38, height: 34)
-                            .background(selection == name ? Color.accentColor.opacity(0.25) : Color.gray.opacity(0.1))
-                            .clipShape(RoundedRectangle(cornerRadius: 6))
+                    ForEach(names, id: \.self) { name in
+                        IconCell(name: name, selected: selection == name)
                             .onTapGesture { selection = name }
                     }
                 }.padding(2)
-            }.frame(height: 130)
+            }.frame(height: 150)
         }
+    }
+}
+
+private struct IconCell: View {
+    let name: String
+    let selected: Bool
+    var body: some View {
+        Group {
+            if let cg = BootstrapIcons.image(named: name) {
+                Image(decorative: cg, scale: 1).resizable().interpolation(.high)
+                    .scaledToFit().padding(6)
+            } else {
+                Color.clear
+            }
+        }
+        .frame(width: 40, height: 36)
+        .background(Color.white)
+        .clipShape(RoundedRectangle(cornerRadius: 6))
+        .overlay(RoundedRectangle(cornerRadius: 6)
+            .stroke(selected ? Color.accentColor : .secondary.opacity(0.25), lineWidth: selected ? 2 : 1))
+        .help(name)
     }
 }
 
@@ -382,32 +430,60 @@ struct SymbolPicker: View {
 
 struct FavoritesSidebar: View {
     @EnvironmentObject private var c: PrinterController
-    @Query(sort: \SavedLabelModel.createdAt, order: .reverse) private var favorites: [SavedLabelModel]
+    @State private var tab = 0   // 0 = Favorites, 1 = History
+    @Query(filter: #Predicate<SavedLabelModel> { $0.kind == "favorite" },
+           sort: \SavedLabelModel.createdAt, order: .reverse) private var favorites: [SavedLabelModel]
+    @Query(filter: #Predicate<SavedLabelModel> { $0.kind == "history" },
+           sort: \SavedLabelModel.createdAt, order: .reverse) private var history: [SavedLabelModel]
+
+    private var items: [SavedLabelModel] { tab == 0 ? favorites : history }
 
     var body: some View {
-        List {
-            if favorites.isEmpty { Text("No favorites yet").foregroundStyle(.secondary) }
-            ForEach(favorites) { fav in
-                Group {
-                    if let cg = c.previewImage(fav.cells, spacingMM: fav.cellSpacingMM) {
-                        Image(decorative: cg, scale: 1).resizable().interpolation(.none)
-                            .aspectRatio(CGFloat(cg.width) / CGFloat(cg.height), contentMode: .fit)
-                            .frame(height: 34).padding(.horizontal, 3).background(.white)
-                            .clipShape(RoundedRectangle(cornerRadius: 4))
-                            .frame(maxWidth: 168, alignment: .leading).clipped()
-                    } else {
-                        Text(fav.name.isEmpty ? "Label" : fav.name).font(.caption)
+        VStack(spacing: 0) {
+            Picker("", selection: $tab) {
+                Text("Favorites").tag(0)
+                Text("History").tag(1)
+            }.pickerStyle(.segmented).labelsHidden().padding(8)
+            Divider()
+            ScrollViewReader { proxy in
+                List {
+                    if items.isEmpty {
+                        Text(tab == 0 ? "No favorites yet" : "No history yet").foregroundStyle(.secondary)
                     }
+                    ForEach(items) { item in row(item).id(item.id) }
+                        .onDelete { idxs in idxs.forEach { c.delete(items[$0]) } }
                 }
-                .padding(.vertical, 3)
-                .contentShape(Rectangle())
-                .onTapGesture { c.load(fav) }
-                .contextMenu {
-                    Button { c.load(fav) } label: { Label("Load", systemImage: "tray.and.arrow.down") }
-                    Button(role: .destructive) { c.delete(fav) } label: { Label("Delete", systemImage: "trash") }
+                // A newly saved/printed label is inserted at the top; snap (no
+                // animation) so it lands at the top in place rather than the whole
+                // column visibly sliding down to reveal it.
+                .onChange(of: items.first?.id) { _, newID in
+                    if let id = newID { proxy.scrollTo(id, anchor: .top) }
                 }
             }
-            .onDelete { idxs in idxs.forEach { c.delete(favorites[$0]) } }
         }.frame(minWidth: 180)
+    }
+
+    @ViewBuilder private func row(_ item: SavedLabelModel) -> some View {
+        Group {
+            if let cg = c.previewImage(item.cells, spacingMM: item.cellSpacingMM) {
+                Image(decorative: cg, scale: 1).resizable().interpolation(.none)
+                    .aspectRatio(CGFloat(cg.width) / CGFloat(cg.height), contentMode: .fit)
+                    .frame(height: 34).padding(.horizontal, 3).background(.white)
+                    .clipShape(RoundedRectangle(cornerRadius: 4))
+                    .frame(maxWidth: 168, alignment: .leading).clipped()
+            } else {
+                Text(item.name.isEmpty ? "Label" : item.name).font(.caption)
+            }
+        }
+        .padding(.vertical, 3)
+        .contentShape(Rectangle())
+        .onTapGesture { c.load(item) }
+        .contextMenu {
+            Button { c.load(item) } label: { Label("Load", systemImage: "tray.and.arrow.down") }
+            if !item.isFavorite {
+                Button { c.saveFavorite(from: item) } label: { Label("Save to Favorites", systemImage: "star") }
+            }
+            Button(role: .destructive) { c.delete(item) } label: { Label("Delete", systemImage: "trash") }
+        }
     }
 }

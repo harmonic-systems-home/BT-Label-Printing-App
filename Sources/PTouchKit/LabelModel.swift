@@ -23,16 +23,21 @@ public struct LabelCell: Identifiable, Sendable, Codable, Hashable {
     public var fontName: String
     public var sizing: SizingMode
     public var imagePath: String?
+    /// Embedded, already-downsized pixel image (PNG). When set, the renderer uses
+    /// this instead of `imagePath`, so saved labels are self-contained (no source
+    /// file needed) and sync across devices. Persisted/saved labels bake their
+    /// image cells into this; the live editor may still reference `imagePath`.
+    public var imageData: Data?
     public var symbolName: String?
     public var style: CellStyle
 
     public init(id: UUID = UUID(), kind: Kind = .text, text: String = "",
                 fontName: String = "Helvetica", sizing: SizingMode = .fitText,
-                imagePath: String? = nil, symbolName: String? = nil,
+                imagePath: String? = nil, imageData: Data? = nil, symbolName: String? = nil,
                 style: CellStyle = .normal) {
         self.id = id; self.kind = kind; self.text = text; self.fontName = fontName
-        self.sizing = sizing; self.imagePath = imagePath; self.symbolName = symbolName
-        self.style = style
+        self.sizing = sizing; self.imagePath = imagePath; self.imageData = imageData
+        self.symbolName = symbolName; self.style = style
     }
 
     public static func text(_ s: String, font: String = "Helvetica") -> LabelCell {

@@ -3,6 +3,7 @@ import Foundation
 import CoreGraphics
 import CoreText
 import ImageIO
+import UniformTypeIdentifiers
 import AppKit
 
 /// A rendered label: printer raster rows plus a readable preview image.
@@ -81,9 +82,7 @@ public struct LabelRenderer {
                          lineSpacing: lineSpacing, fillFraction: vFill,
                          sideMarginDots: inverted ? 18 : 0)
         case .image:
-            if let p = cell.imagePath, let c = imageContentGray(URL(fileURLWithPath: p), height: innerH) {
-                g = place(c, hPad: pad)
-            }
+            if let c = imageContent(cell, height: innerH) { g = place(c, hPad: pad) }
         case .symbol:
             if let n = cell.symbolName, let ink = symbolInk(n) {
                 g = place(scaleToHeight(ink, innerH), hPad: pad)
@@ -144,8 +143,17 @@ public struct LabelRenderer {
 
     // MARK: - Image / PDF / symbol → content bitmap of the given height
 
+    /// Resolve an image cell's content to a grayscale bitmap of the given height,
+    /// preferring embedded `imageData` over the source `imagePath`.
+    private func imageContent(_ cell: LabelCell, height ih: Int) -> Gray? {
+        if let d = cell.imageData { return imageContentGray(data: d, height: ih) }
+        if let p = cell.imagePath { return imageContentGray(URL(fileURLWithPath: p), height: ih) }
+        return nil
+    }
+
     private func imageContentGray(_ url: URL, height ih: Int) -> Gray? {
-        if url.pathExtension.lowercased() == "pdf" {
+        switch url.pathExtension.lowercased() {
+        case "pdf":
             guard let doc = CGPDFDocument(url as CFURL), let page = doc.page(at: 1) else { return nil }
             let box = page.getBoxRect(.mediaBox); guard box.height > 0 else { return nil }
             let scale = CGFloat(ih) / box.height
@@ -154,9 +162,66 @@ public struct LabelRenderer {
             ctx.saveGState(); ctx.scaleBy(x: scale, y: scale)
             ctx.translateBy(x: -box.minX, y: -box.minY); ctx.drawPDFPage(page); ctx.restoreGState()
             return cropHorizontally(readGray(ctx, sW, ih))
+        case "svg":
+            return svgGray(url, height: ih)
+        default:
+            guard let src = CGImageSourceCreateWithURL(url as CFURL, nil),
+                  let cg = CGImageSourceCreateImageAtIndex(src, 0, nil) else { return nil }
+            return imageContentGray(cg: cg, height: ih)
         }
-        guard let src = CGImageSourceCreateWithURL(url as CFURL, nil),
+    }
+
+    /// Rasterize an SVG via NSImage into a grayscale bitmap, cropped to its ink and
+    /// scaled to fill the band height (SVG viewBoxes often pad the artwork, which
+    /// would otherwise print undersized on the tape). Colours are mapped to
+    /// luminance (composited over white); a fully light/white opaque SVG falls back
+    /// to alpha coverage so its shape still prints as ink. (CGImageSource can't
+    /// decode SVG, so this uses AppKit's SVG support — the same path as the bundled
+    /// icon generator.)
+    private func svgGray(_ url: URL, height ih: Int) -> Gray? {
+        guard let img = NSImage(contentsOf: url), img.size.width > 0, img.size.height > 0 else { return nil }
+        // Render large, then crop-to-ink and scale down, so filling the band stays crisp.
+        let H = max(ih, 256)
+        let w = max(1, Int((img.size.width / img.size.height * CGFloat(H)).rounded()))
+        guard let rep = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: w, pixelsHigh: H,
+                bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true, isPlanar: false,
+                colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0) else { return nil }
+        rep.size = NSSize(width: w, height: H)
+        NSGraphicsContext.saveGraphicsState()
+        NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: rep)
+        img.draw(in: NSRect(x: 0, y: 0, width: w, height: H))
+        NSGraphicsContext.restoreGraphicsState()
+        guard let data = rep.bitmapData else { return nil }
+        let spp = rep.samplesPerPixel, rb = rep.bytesPerRow
+        var px = [UInt8](repeating: 255, count: w * H)
+        var opaque = 0, dark = 0
+        for r in 0..<H {
+            for c in 0..<w {
+                let o = r * rb + c * spp
+                let a = Int(data[o + spp - 1])
+                guard a > 40 else { continue }
+                opaque += 1
+                let lum = (Int(data[o]) * 54 + Int(data[o + 1]) * 183 + Int(data[o + 2]) * 19) >> 8
+                let g = 255 - ((255 - lum) * a / 255)   // composite over white
+                px[r * w + c] = UInt8(g)
+                if g < 128 { dark += 1 }
+            }
+        }
+        if opaque > 0 && dark * 20 < opaque {   // all-but-white opaque → use alpha as ink
+            for r in 0..<H {
+                for c in 0..<w { px[r * w + c] = data[r * rb + c * spp + spp - 1] > 40 ? 0 : 255 }
+            }
+        }
+        return scaleToHeight(cropToInk(Gray(width: w, height: H, px: px)), ih)
+    }
+
+    private func imageContentGray(data: Data, height ih: Int) -> Gray? {
+        guard let src = CGImageSourceCreateWithData(data as CFData, nil),
               let cg = CGImageSourceCreateImageAtIndex(src, 0, nil) else { return nil }
+        return imageContentGray(cg: cg, height: ih)
+    }
+
+    private func imageContentGray(cg: CGImage, height ih: Int) -> Gray? {
         let sW = max(1, Int((CGFloat(cg.width) * CGFloat(ih) / CGFloat(cg.height)).rounded()))
         guard let ctx = grayContext(sW, ih) else { return nil }
         ctx.interpolationQuality = .high
@@ -164,9 +229,42 @@ public struct LabelRenderer {
         return cropHorizontally(readGray(ctx, sW, ih))
     }
 
-    /// The symbol's tight ink bitmap (rendered large for quality). Uses the
-    /// alpha channel as the glyph shape so it's appearance-independent.
+    /// An image cell's content, downsized to the printable height, as a grayscale
+    /// PNG. Used to embed (bake) images into saved labels so they no longer depend
+    /// on the original file. Returns nil for non-image cells or unreadable sources.
+    public func downsizedImagePNG(for cell: LabelCell) -> Data? {
+        guard cell.kind == .image, let gray = imageContent(cell, height: printableHeight),
+              let cg = grayToCGImage(gray) else { return nil }
+        let out = NSMutableData()
+        guard let dest = CGImageDestinationCreateWithData(out, UTType.png.identifier as CFString, 1, nil) else { return nil }
+        CGImageDestinationAddImage(dest, cg, nil)
+        guard CGImageDestinationFinalize(dest) else { return nil }
+        return out as Data
+    }
+
+    private func grayToCGImage(_ g: Gray) -> CGImage? {
+        guard let ctx = grayContext(g.width, g.height), let data = ctx.data else { return nil }
+        let ptr = data.bindMemory(to: UInt8.self, capacity: ctx.bytesPerRow * g.height)
+        for r in 0..<g.height { for c in 0..<g.width { ptr[r * ctx.bytesPerRow + c] = g.px[r * g.width + c] } }
+        return ctx.makeImage()
+    }
+
+    /// The symbol's tight ink bitmap. Prefers a bundled Bootstrap icon (pre-
+    /// rasterized grayscale PNG); falls back to SF Symbols so any pre-existing
+    /// SF-named cells still render.
     private func symbolInk(_ name: String) -> Gray? {
+        if let cg = BootstrapIcons.image(named: name) {
+            let w = cg.width, h = cg.height
+            guard let ctx = grayContext(w, h) else { return nil }
+            ctx.draw(cg, in: CGRect(x: 0, y: 0, width: w, height: h))
+            return cropToInk(readGray(ctx, w, h))
+        }
+        return sfSymbolInk(name)
+    }
+
+    /// SF Symbols fallback (legacy). Uses the alpha channel as the glyph shape so
+    /// it's appearance-independent.
+    private func sfSymbolInk(_ name: String) -> Gray? {
         let cfg = NSImage.SymbolConfiguration(pointSize: 240, weight: .regular)
         guard let base = NSImage(systemSymbolName: name, accessibilityDescription: nil),
               let sym = base.withSymbolConfiguration(cfg) else { return nil }

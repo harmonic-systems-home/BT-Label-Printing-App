@@ -12,6 +12,9 @@ let package = Package(
     targets: [
         .target(
             name: "PTouchKit",
+            resources: [
+                .copy("Resources/icons"),
+            ],
             linkerSettings: [
                 .linkedFramework("IOBluetooth", .when(platforms: [.macOS])),
                 .linkedFramework("Foundation"),
@@ -24,6 +27,11 @@ let package = Package(
         .executableTarget(
             name: "ptprint",
             dependencies: ["PTouchKit"]
+        ),
+        // Dev-only: rasterizes SVG icons → grayscale PNGs in PTouchKit/Resources/icons.
+        // Not a product; run manually to (re)generate the bundled Bootstrap Icons.
+        .executableTarget(
+            name: "pticongen"
         ),
         .testTarget(
             name: "PTouchKitTests",
