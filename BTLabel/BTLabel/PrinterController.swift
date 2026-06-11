@@ -32,6 +32,10 @@ final class PrinterController: ObservableObject {
     @Published var selectedID: LabelCell.ID?
     @Published var cellSpacingMM = 2.7
 
+    /// Bumped to ask the text editor to take focus and select all its text (e.g. at
+    /// launch, so the user can immediately type over the default label text).
+    @Published var focusTextToken = 0
+
     // The tape this label is designed for (Brother colour codes); drives the
     // tinted preview and the print-time mismatch warning. Default: black on white.
     @Published var designTape: UInt8 = 0x01

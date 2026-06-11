@@ -12,6 +12,7 @@ struct ContentView: View {
     @EnvironmentObject private var c: PrinterController
     @Environment(\.modelContext) private var modelContext
     @State private var showSettings = false
+    @State private var didInitialFocus = false
 
     var body: some View {
         NavigationSplitView {
@@ -28,7 +29,11 @@ struct ContentView: View {
             }
         }
         .sheet(isPresented: $showSettings) { SettingsSheet().environmentObject(c) }
-        .onAppear { c.modelContext = modelContext }
+        .onAppear {
+            c.modelContext = modelContext
+            // Focus + select the default label text so the user can just start typing.
+            if !didInitialFocus { didInitialFocus = true; c.focusTextToken += 1 }
+        }
     }
 }
 
@@ -471,7 +476,7 @@ struct CellEditorView: View {
 
     private var textControls: some View {
         VStack(alignment: .leading, spacing: 10) {
-            TextEditor(text: $cell.text).font(.system(size: 14)).frame(height: 60)
+            LabelTextEditor(text: $cell.text, focusToken: c.focusTextToken).frame(height: 60)
                 .overlay(RoundedRectangle(cornerRadius: 4).stroke(.secondary.opacity(0.3)))
             Text("Return adds a line. Tokens like /i /c /n /d are allowed (see Print options).")
                 .font(.caption2).foregroundStyle(.secondary)
@@ -512,6 +517,64 @@ struct CellEditorView: View {
                         .font(.caption2).foregroundStyle(.secondary)
                 }.padding(.top, 6)
             }
+        }
+    }
+}
+
+/// A multi-line text editor (NSTextView-backed) that, unlike SwiftUI's TextEditor,
+/// can take focus and select all its text on demand (see `focusToken`).
+struct LabelTextEditor: NSViewRepresentable {
+    @Binding var text: String
+    var focusToken: Int
+
+    func makeNSView(context: Context) -> NSScrollView {
+        let scroll = NSTextView.scrollableTextView()
+        let tv = scroll.documentView as! NSTextView
+        tv.delegate = context.coordinator
+        tv.isRichText = false
+        tv.allowsUndo = true
+        tv.font = .systemFont(ofSize: 14)
+        tv.string = text
+        tv.drawsBackground = false
+        // Label text is literal — disable macOS substitutions that rewrite input.
+        // automaticTextReplacement covers double-space → ". " (the period the user
+        // keeps deleting); the rest stop smart quotes/dashes and autocorrect.
+        tv.isAutomaticTextReplacementEnabled = false
+        tv.isAutomaticQuoteSubstitutionEnabled = false
+        tv.isAutomaticDashSubstitutionEnabled = false
+        tv.isAutomaticSpellingCorrectionEnabled = false
+        tv.isContinuousSpellCheckingEnabled = false
+        tv.isGrammarCheckingEnabled = false
+        tv.isAutomaticDataDetectionEnabled = false
+        tv.isAutomaticLinkDetectionEnabled = false
+        scroll.drawsBackground = false
+        tv.textContainerInset = NSSize(width: 4, height: 6)
+        context.coordinator.lastFocusToken = focusToken   // don't focus on first build
+        return scroll
+    }
+
+    func updateNSView(_ nsView: NSScrollView, context: Context) {
+        guard let tv = nsView.documentView as? NSTextView else { return }
+        if tv.string != text { tv.string = text }
+        if focusToken != context.coordinator.lastFocusToken {
+            context.coordinator.lastFocusToken = focusToken
+            DispatchQueue.main.async {
+                guard let window = tv.window else { return }
+                window.makeFirstResponder(tv)
+                tv.selectAll(nil)
+            }
+        }
+    }
+
+    func makeCoordinator() -> Coordinator { Coordinator(self) }
+
+    final class Coordinator: NSObject, NSTextViewDelegate {
+        let parent: LabelTextEditor
+        var lastFocusToken = 0
+        init(_ parent: LabelTextEditor) { self.parent = parent }
+        func textDidChange(_ notification: Notification) {
+            guard let tv = notification.object as? NSTextView else { return }
+            parent.text = tv.string
         }
     }
 }
