@@ -30,14 +30,37 @@ public struct LabelCell: Identifiable, Sendable, Codable, Hashable {
     public var imageData: Data?
     public var symbolName: String?
     public var style: CellStyle
+    /// Image cells only: dither (Floyd–Steinberg) to 1-bit instead of a hard
+    /// threshold — better for photos. Ignored for text/symbol cells.
+    public var dithered: Bool
 
     public init(id: UUID = UUID(), kind: Kind = .text, text: String = "",
                 fontName: String = "Helvetica", sizing: SizingMode = .fitText,
                 imagePath: String? = nil, imageData: Data? = nil, symbolName: String? = nil,
-                style: CellStyle = .normal) {
+                style: CellStyle = .normal, dithered: Bool = false) {
         self.id = id; self.kind = kind; self.text = text; self.fontName = fontName
         self.sizing = sizing; self.imagePath = imagePath; self.imageData = imageData
-        self.symbolName = symbolName; self.style = style
+        self.symbolName = symbolName; self.style = style; self.dithered = dithered
+    }
+
+    // Tolerant decoding so labels saved by earlier versions (without newer keys
+    // like `dithered`/`imageData`) still load. Encoding stays synthesized.
+    enum CodingKeys: String, CodingKey {
+        case id, kind, text, fontName, sizing, imagePath, imageData, symbolName, style, dithered
+    }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decode(UUID.self, forKey: .id)
+        kind = try c.decode(Kind.self, forKey: .kind)
+        text = try c.decodeIfPresent(String.self, forKey: .text) ?? ""
+        fontName = try c.decodeIfPresent(String.self, forKey: .fontName) ?? "Helvetica"
+        sizing = try c.decodeIfPresent(SizingMode.self, forKey: .sizing) ?? .fitText
+        imagePath = try c.decodeIfPresent(String.self, forKey: .imagePath)
+        imageData = try c.decodeIfPresent(Data.self, forKey: .imageData)
+        symbolName = try c.decodeIfPresent(String.self, forKey: .symbolName)
+        style = try c.decodeIfPresent(CellStyle.self, forKey: .style) ?? .normal
+        dithered = try c.decodeIfPresent(Bool.self, forKey: .dithered) ?? false
     }
 
     public static func text(_ s: String, font: String = "Helvetica") -> LabelCell {

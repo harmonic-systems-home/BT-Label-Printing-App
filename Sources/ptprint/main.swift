@@ -17,6 +17,7 @@ var flipLength = false, flipWidth = false, name = "PT-P300", font = "Helvetica"
 var previewPath: String?, imagePath: String?, symbolName: String?
 var sizing: SizingMode = .fitText
 var invert = false
+var dither = false
 var text = "Hello from Swift"
 var sawText = false
 var i = 0
@@ -25,6 +26,7 @@ while i < args.count {
     case "--flip-length": flipLength = true
     case "--flip-width": flipWidth = true
     case "--invert": invert = true
+    case "--dither": dither = true
     case "--name": i += 1; if i < args.count { name = args[i] }
     case "--font": i += 1; if i < args.count { font = args[i] }
     case "--preview": i += 1; if i < args.count { previewPath = args[i] }
@@ -41,7 +43,7 @@ func err(_ s: String) { FileHandle.standardError.write((s + "\n").data(using: .u
 let renderer = LabelRenderer(flipLength: flipLength, flipWidth: flipWidth)
 var cells: [LabelCell] = []
 if let n = symbolName { cells.append(.symbol(n)) }
-if let p = imagePath { cells.append(.image(p)) }
+if let p = imagePath { cells.append(LabelCell(kind: .image, imagePath: p, dithered: dither)) }
 if !text.isEmpty {
     cells.append(LabelCell(kind: .text, text: text, fontName: font, sizing: sizing,
                            style: invert ? .inverted : .normal))

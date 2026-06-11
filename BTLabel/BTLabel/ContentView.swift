@@ -491,6 +491,9 @@ struct CellEditorView: View {
                 Text("PNG, JPEG, SVG, or single-page PDF.").font(.caption2).foregroundStyle(.secondary)
             }
             Spacer()
+            Toggle("Dither", isOn: $cell.dithered)
+                .toggleStyle(.checkbox)
+                .help("Floyd–Steinberg dithering — good for photos; leave off for line art, logos, and text.")
         }
     }
 }

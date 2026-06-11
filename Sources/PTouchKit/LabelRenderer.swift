@@ -82,7 +82,9 @@ public struct LabelRenderer {
                          lineSpacing: lineSpacing, fillFraction: vFill,
                          sideMarginDots: inverted ? 18 : 0)
         case .image:
-            if let c = imageContent(cell, height: innerH) { g = place(c, hPad: pad) }
+            if let content = imageContent(cell, height: innerH) {
+                g = place(cell.dithered ? floydSteinberg(content) : content, hPad: pad)
+            }
         case .symbol:
             if let n = cell.symbolName, let ink = symbolInk(n) {
                 g = place(scaleToHeight(ink, innerH), hPad: pad)
@@ -219,6 +221,30 @@ public struct LabelRenderer {
         guard let src = CGImageSourceCreateWithData(data as CFData, nil),
               let cg = CGImageSourceCreateImageAtIndex(src, 0, nil) else { return nil }
         return imageContentGray(cg: cg, height: ih)
+    }
+
+    /// Floyd–Steinberg dither a grayscale bitmap to 1-bit (0/255). Run at the final
+    /// dot resolution so the error diffusion matches what actually prints — gives
+    /// photos the illusion of mid-tones instead of a harsh threshold.
+    private func floydSteinberg(_ g: Gray) -> Gray {
+        let w = g.width, h = g.height
+        var buf = g.px.map(Int.init)
+        var out = [UInt8](repeating: 255, count: w * h)
+        for y in 0..<h {
+            for x in 0..<w {
+                let i = y * w + x
+                let new = buf[i] < 128 ? 0 : 255
+                out[i] = UInt8(new)
+                let err = buf[i] - new
+                if x + 1 < w { buf[i + 1] += err * 7 / 16 }
+                if y + 1 < h {
+                    if x > 0 { buf[i + w - 1] += err * 3 / 16 }
+                    buf[i + w] += err * 5 / 16
+                    if x + 1 < w { buf[i + w + 1] += err / 16 }
+                }
+            }
+        }
+        return Gray(width: w, height: h, px: out)
     }
 
     private func imageContentGray(cg: CGImage, height ih: Int) -> Gray? {
