@@ -64,7 +64,7 @@ struct PrinterStatusBar: View {
                 }.font(.callout)
             }
             Spacer()
-            if !store.isUnlocked {
+            if !store.isUnlocked && c.freePrintsLeft > 0 {
                 Button { showPurchase = true } label: {
                     Text("\(c.freePrintsLeft) free prints left").font(.caption)
                 }
@@ -74,8 +74,12 @@ struct PrinterStatusBar: View {
             Button {
                 if canPrint { Task { await c.printCurrent() } } else { showPurchase = true }
             } label: {
-                Label(c.copies > 1 ? "Print \(c.copies)" : "Print", systemImage: "printer.fill")
-                    .frame(minWidth: 80)
+                if canPrint {
+                    Label(c.copies > 1 ? "Print \(c.copies)" : "Print", systemImage: "printer.fill")
+                        .frame(minWidth: 80)
+                } else {
+                    Label("Purchase to Print", systemImage: "cart.fill").frame(minWidth: 80)
+                }
             }
             .keyboardShortcut(.return, modifiers: .command)
             .buttonStyle(.borderedProminent)
