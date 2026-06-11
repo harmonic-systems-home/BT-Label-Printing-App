@@ -7,9 +7,16 @@
 
 import SwiftUI
 import SwiftData
+import AppKit
+
+/// Quit the app when its window is closed (single-window utility).
+final class AppDelegate: NSObject, NSApplicationDelegate {
+    func applicationShouldTerminateAfterLastWindowClosed(_ app: NSApplication) -> Bool { true }
+}
 
 @main
 struct BTLabelApp: App {
+    @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
     @StateObject private var controller = PrinterController()
     private let container = BTLabelApp.makeContainer()
 

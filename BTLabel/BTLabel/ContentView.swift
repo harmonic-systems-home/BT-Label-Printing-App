@@ -576,6 +576,19 @@ struct LabelTextEditor: NSViewRepresentable {
             guard let tv = notification.object as? NSTextView else { return }
             parent.text = tv.string
         }
+        // Hard-block the macOS double-space → ". " substitution (the property flag
+        // doesn't reliably disable it): if a single existing space is about to be
+        // replaced with a "."-leading string, keep the two spaces instead.
+        func textView(_ textView: NSTextView, shouldChangeTextIn affectedCharRange: NSRange,
+                      replacementString: String?) -> Bool {
+            guard replacementString == ". ",
+                  affectedCharRange.length == 1,
+                  affectedCharRange.location < (textView.string as NSString).length,
+                  (textView.string as NSString).substring(with: affectedCharRange) == " "
+            else { return true }
+            textView.insertText("  ", replacementRange: affectedCharRange)
+            return false
+        }
     }
 }
 
