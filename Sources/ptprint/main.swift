@@ -18,6 +18,7 @@ var previewPath: String?, imagePath: String?, symbolName: String?
 var sizing: SizingMode = .fitText
 var invert = false
 var dither = false
+var brightness = 0.0, contrast = 0.0
 var text = "Hello from Swift"
 var sawText = false
 var i = 0
@@ -27,6 +28,8 @@ while i < args.count {
     case "--flip-width": flipWidth = true
     case "--invert": invert = true
     case "--dither": dither = true
+    case "--brightness": i += 1; if i < args.count { brightness = Double(args[i]) ?? 0 }
+    case "--contrast": i += 1; if i < args.count { contrast = Double(args[i]) ?? 0 }
     case "--name": i += 1; if i < args.count { name = args[i] }
     case "--font": i += 1; if i < args.count { font = args[i] }
     case "--preview": i += 1; if i < args.count { previewPath = args[i] }
@@ -43,7 +46,8 @@ func err(_ s: String) { FileHandle.standardError.write((s + "\n").data(using: .u
 let renderer = LabelRenderer(flipLength: flipLength, flipWidth: flipWidth)
 var cells: [LabelCell] = []
 if let n = symbolName { cells.append(.symbol(n)) }
-if let p = imagePath { cells.append(LabelCell(kind: .image, imagePath: p, dithered: dither)) }
+if let p = imagePath { cells.append(LabelCell(kind: .image, imagePath: p, dithered: dither,
+                                              brightness: brightness, contrast: contrast)) }
 if !text.isEmpty {
     cells.append(LabelCell(kind: .text, text: text, fontName: font, sizing: sizing,
                            style: invert ? .inverted : .normal))

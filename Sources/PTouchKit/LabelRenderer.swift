@@ -82,7 +82,8 @@ public struct LabelRenderer {
                          lineSpacing: lineSpacing, fillFraction: vFill,
                          sideMarginDots: inverted ? 18 : 0)
         case .image:
-            if let content = imageContent(cell, height: innerH) {
+            if var content = imageContent(cell, height: innerH) {
+                adjustLevels(&content, brightness: cell.brightness, contrast: cell.contrast)
                 g = place(cell.dithered ? floydSteinberg(content) : content, hPad: pad)
             }
         case .symbol:
@@ -221,6 +222,18 @@ public struct LabelRenderer {
         guard let src = CGImageSourceCreateWithData(data as CFData, nil),
               let cg = CGImageSourceCreateImageAtIndex(src, 0, nil) else { return nil }
         return imageContentGray(cg: cg, height: ih)
+    }
+
+    /// Apply brightness/contrast (each −1…1, 0 = none) to a grayscale bitmap before
+    /// the 1-bit step, so the black/white cutoff can be tuned for line art/logos.
+    private func adjustLevels(_ g: inout Gray, brightness b: Double, contrast c: Double) {
+        guard b != 0 || c != 0 else { return }
+        let cf = 1 + c                       // contrast factor around mid-grey
+        let shift = b * 255
+        for i in g.px.indices {
+            let x = (Double(g.px[i]) - 128) * cf + 128 + shift
+            g.px[i] = UInt8(min(255, max(0, x)))
+        }
     }
 
     /// Floyd–Steinberg dither a grayscale bitmap to 1-bit (0/255). Run at the final

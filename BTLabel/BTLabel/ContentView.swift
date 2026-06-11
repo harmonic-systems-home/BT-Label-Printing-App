@@ -481,19 +481,39 @@ struct CellEditorView: View {
     }
 
     private var imageControls: some View {
-        HStack(spacing: 12) {
-            Button { c.pickImage(for: cell.id) } label: { Label("Choose Image…", systemImage: "photo") }
-            if let p = cell.imagePath {
-                Text((p as NSString).lastPathComponent).lineLimit(1).truncationMode(.middle).foregroundStyle(.secondary)
-            } else if cell.imageData != nil {
-                Text("Embedded image").font(.caption2).foregroundStyle(.secondary)
-            } else {
-                Text("PNG, JPEG, SVG, or single-page PDF.").font(.caption2).foregroundStyle(.secondary)
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 12) {
+                Button { c.pickImage(for: cell.id) } label: { Label("Choose Image…", systemImage: "photo") }
+                if let p = cell.imagePath {
+                    Text((p as NSString).lastPathComponent).lineLimit(1).truncationMode(.middle).foregroundStyle(.secondary)
+                } else if cell.imageData != nil {
+                    Text("Embedded image").font(.caption2).foregroundStyle(.secondary)
+                } else {
+                    Text("PNG, JPEG, SVG, or single-page PDF.").font(.caption2).foregroundStyle(.secondary)
+                }
+                Spacer()
             }
-            Spacer()
-            Toggle("Dither", isOn: $cell.dithered)
-                .toggleStyle(.checkbox)
-                .help("Floyd–Steinberg dithering — good for photos; leave off for line art, logos, and text.")
+            DisclosureGroup("Adjust Image") {
+                VStack(alignment: .leading, spacing: 10) {
+                    Toggle("Dither (for photos)", isOn: $cell.dithered)
+                        .toggleStyle(.checkbox)
+                        .help("Floyd–Steinberg dithering — good for photos; leave off for line art, logos, and text.")
+                    HStack(spacing: 16) {
+                        HStack(spacing: 6) {
+                            Text("Brightness").font(.caption).foregroundStyle(.secondary)
+                            Slider(value: $cell.brightness, in: -1...1).frame(width: 130)
+                        }
+                        HStack(spacing: 6) {
+                            Text("Contrast").font(.caption).foregroundStyle(.secondary)
+                            Slider(value: $cell.contrast, in: -1...1).frame(width: 130)
+                        }
+                        Button("Reset") { cell.brightness = 0; cell.contrast = 0 }
+                            .font(.caption).disabled(cell.brightness == 0 && cell.contrast == 0)
+                    }
+                    Text("Tune the black/white cutoff for logos & line art (or use Dither for photos).")
+                        .font(.caption2).foregroundStyle(.secondary)
+                }.padding(.top, 6)
+            }
         }
     }
 }

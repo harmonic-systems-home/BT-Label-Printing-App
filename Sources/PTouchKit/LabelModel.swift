@@ -33,20 +33,27 @@ public struct LabelCell: Identifiable, Sendable, Codable, Hashable {
     /// Image cells only: dither (Floyd–Steinberg) to 1-bit instead of a hard
     /// threshold — better for photos. Ignored for text/symbol cells.
     public var dithered: Bool
+    /// Image cells only: tone adjustments (each −1…1, 0 = none) applied to the
+    /// grayscale before the 1-bit step, to tune where black/white falls.
+    public var brightness: Double
+    public var contrast: Double
 
     public init(id: UUID = UUID(), kind: Kind = .text, text: String = "",
                 fontName: String = "Helvetica", sizing: SizingMode = .fitText,
                 imagePath: String? = nil, imageData: Data? = nil, symbolName: String? = nil,
-                style: CellStyle = .normal, dithered: Bool = false) {
+                style: CellStyle = .normal, dithered: Bool = false,
+                brightness: Double = 0, contrast: Double = 0) {
         self.id = id; self.kind = kind; self.text = text; self.fontName = fontName
         self.sizing = sizing; self.imagePath = imagePath; self.imageData = imageData
         self.symbolName = symbolName; self.style = style; self.dithered = dithered
+        self.brightness = brightness; self.contrast = contrast
     }
 
     // Tolerant decoding so labels saved by earlier versions (without newer keys
     // like `dithered`/`imageData`) still load. Encoding stays synthesized.
     enum CodingKeys: String, CodingKey {
-        case id, kind, text, fontName, sizing, imagePath, imageData, symbolName, style, dithered
+        case id, kind, text, fontName, sizing, imagePath, imageData, symbolName, style
+        case dithered, brightness, contrast
     }
 
     public init(from decoder: Decoder) throws {
@@ -61,6 +68,8 @@ public struct LabelCell: Identifiable, Sendable, Codable, Hashable {
         symbolName = try c.decodeIfPresent(String.self, forKey: .symbolName)
         style = try c.decodeIfPresent(CellStyle.self, forKey: .style) ?? .normal
         dithered = try c.decodeIfPresent(Bool.self, forKey: .dithered) ?? false
+        brightness = try c.decodeIfPresent(Double.self, forKey: .brightness) ?? 0
+        contrast = try c.decodeIfPresent(Double.self, forKey: .contrast) ?? 0
     }
 
     public static func text(_ s: String, font: String = "Helvetica") -> LabelCell {
