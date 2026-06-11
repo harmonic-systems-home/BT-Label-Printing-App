@@ -40,6 +40,9 @@ final class PrinterController: ObservableObject {
     // tinted preview and the print-time mismatch warning. Default: black on white.
     @Published var designTape: UInt8 = 0x01
     @Published var designText: UInt8 = 0x08
+    // While true, the design tape follows the installed tape as status updates.
+    // Set false once the user deliberately picks a tape (or loads a favorite).
+    private var designTapeIsAuto = true
 
     /// Set by the view; favorites, history, and settings are persisted via
     /// SwiftData (synced if the iCloud capability is enabled). Setting it loads
@@ -120,7 +123,7 @@ final class PrinterController: ObservableObject {
 
     // MARK: - Tape colour (design tape + tinting)
 
-    func setDesignTape(_ p: TapePreset) { designTape = p.tape; designText = p.text }
+    func setDesignTape(_ p: TapePreset) { designTape = p.tape; designText = p.text; designTapeIsAuto = false }
 
     /// Recolour a grayscale label/cell image to a tape: ink (dark) → text colour,
     /// background (light) → tape colour. Display only — the printed raster is
@@ -324,13 +327,15 @@ final class PrinterController: ObservableObject {
     func load(_ fav: SavedLabelModel) {
         cells = fav.cells; cellSpacingMM = fav.cellSpacingMM; selectedID = cells.first?.id
         designTape = UInt8(clamping: fav.tapeColor); designText = UInt8(clamping: fav.textColor)
+        designTapeIsAuto = false   // a favorite carries its own intended tape
     }
 
     func newLabel() {
         cells = [LabelCell(kind: .text, text: "Text")]
         cellSpacingMM = 2.7
         selectedID = cells.first?.id
-        // Default a new label to the installed tape (if known).
+        // A new label follows the installed tape again.
+        designTapeIsAuto = true
         if let s = status { designTape = s.tapeColor; designText = s.textColor }
     }
 
@@ -408,7 +413,11 @@ final class PrinterController: ObservableObject {
         guard activity == .idle else { return false }
         activity = .working; message = starting
         let result = await BluetoothRunner.run(name: deviceName, op: op)
-        if let s = result.status { status = s }
+        if let s = result.status {
+            status = s
+            // Follow the installed tape in the preview/picker until the user picks one.
+            if designTapeIsAuto { designTape = s.tapeColor; designText = s.textColor }
+        }
         message = result.message; activity = .idle
         return result.ok
     }
