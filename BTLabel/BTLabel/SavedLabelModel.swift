@@ -23,6 +23,10 @@ final class SavedLabelModel {
     var kind: String = "favorite"
     /// Stable hash of the label content (cells + spacing) for dedupe.
     var contentHash: String = ""
+    /// The tape this label was designed for (Brother colour codes, stored as Int
+    /// for CloudKit). Default: black text (0x08) on white tape (0x01).
+    var tapeColor: Int = 1
+    var textColor: Int = 8
 
     /// The decoded cells (not itself persisted; backed by `cellsData`).
     var cells: [LabelCell] {
@@ -33,12 +37,14 @@ final class SavedLabelModel {
     var isFavorite: Bool { kind == Kind.favorite.rawValue }
 
     init(name: String, cells: [LabelCell], cellSpacingMM: Double = 2.7,
-         kind: Kind = .favorite) {
+         kind: Kind = .favorite, tapeColor: Int = 1, textColor: Int = 8) {
         self.name = name
         self.cellsData = (try? JSONEncoder().encode(cells)) ?? Data()
         self.cellSpacingMM = cellSpacingMM
         self.kind = kind.rawValue
         self.contentHash = SavedLabelModel.hash(cells: cells, spacingMM: cellSpacingMM)
+        self.tapeColor = tapeColor
+        self.textColor = textColor
     }
 
     /// Stable content fingerprint used to dedupe identical labels (independent of

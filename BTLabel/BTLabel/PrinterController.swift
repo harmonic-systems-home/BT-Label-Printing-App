@@ -32,6 +32,11 @@ final class PrinterController: ObservableObject {
     @Published var selectedID: LabelCell.ID?
     @Published var cellSpacingMM = 2.7
 
+    // The tape this label is designed for (Brother colour codes); drives the
+    // tinted preview and the print-time mismatch warning. Default: black on white.
+    @Published var designTape: UInt8 = 0x01
+    @Published var designText: UInt8 = 0x08
+
     /// Set by the view; favorites, history, and settings are persisted via
     /// SwiftData (synced if the iCloud capability is enabled). Setting it loads
     /// the contact settings.
@@ -43,6 +48,11 @@ final class PrinterController: ObservableObject {
     @Published var totalCount = 0        // 0 == auto (startIndex + copies - 1)
     @Published var spacingMM = 2.5
     @Published var cutLine = true
+
+    /// Set when a print is blocked because the installed tape (freshly queried)
+    /// differs from the label's design tape; drives the confirmation alert.
+    @Published var pendingMismatchPrint = false
+    static let mismatchSentinel = "\u{1}tape-mismatch"
 
     // Contact fields used by /n /p /s /e tokens. Persisted via SwiftData/iCloud
     // (see AppSettings) so they sync across devices and survive restarts.
@@ -103,6 +113,58 @@ final class PrinterController: ObservableObject {
     func cellImage(_ cell: LabelCell) -> CGImage? {
         renderer.render(cells: resolvedCells(index: startIndex, [cell]), endMarginDots: 0)?.preview
     }
+
+    // MARK: - Tape colour (design tape + tinting)
+
+    func setDesignTape(_ p: TapePreset) { designTape = p.tape; designText = p.text }
+
+    /// Recolour a grayscale label/cell image to a tape: ink (dark) → text colour,
+    /// background (light) → tape colour. Display only — the printed raster is
+    /// unchanged. Anti-aliased edges blend the two colours.
+    func tinted(_ gray: CGImage, tape: UInt8, text: UInt8) -> CGImage? {
+        let w = gray.width, h = gray.height
+        guard w > 0, h > 0,
+              let gctx = CGContext(data: nil, width: w, height: h, bitsPerComponent: 8, bytesPerRow: 0,
+                                   space: CGColorSpaceCreateDeviceGray(),
+                                   bitmapInfo: CGImageAlphaInfo.none.rawValue) else { return nil }
+        gctx.draw(gray, in: CGRect(x: 0, y: 0, width: w, height: h))
+        guard let gp = gctx.data else { return nil }
+        let gstride = gctx.bytesPerRow
+        let g = gp.bindMemory(to: UInt8.self, capacity: gstride * h)
+        let bg = TapeColor.rgb(tape), ink = TapeColor.rgb(text)
+        let clear = TapeColor.isClear(tape)
+        let alpha: CGImageAlphaInfo = clear ? .premultipliedLast : .noneSkipLast
+        guard let octx = CGContext(data: nil, width: w, height: h, bitsPerComponent: 8, bytesPerRow: 0,
+                                   space: CGColorSpaceCreateDeviceRGB(),
+                                   bitmapInfo: alpha.rawValue),
+              let op = octx.data else { return nil }
+        let ostride = octx.bytesPerRow
+        let o = op.bindMemory(to: UInt8.self, capacity: ostride * h)
+        for y in 0..<h {
+            for x in 0..<w {
+                let t = Int(g[y * gstride + x])   // 0 = ink … 255 = background
+                let i = y * ostride + x * 4
+                if clear {
+                    // Clear tape: ink keeps its colour with coverage alpha; the
+                    // background is transparent so a checkerboard shows through.
+                    let cov = 255 - t
+                    o[i]     = UInt8(Int(ink.r) * cov / 255)
+                    o[i + 1] = UInt8(Int(ink.g) * cov / 255)
+                    o[i + 2] = UInt8(Int(ink.b) * cov / 255)
+                    o[i + 3] = UInt8(cov)
+                } else {
+                    o[i]     = UInt8((Int(ink.r) * (255 - t) + Int(bg.r) * t) / 255)
+                    o[i + 1] = UInt8((Int(ink.g) * (255 - t) + Int(bg.g) * t) / 255)
+                    o[i + 2] = UInt8((Int(ink.b) * (255 - t) + Int(bg.b) * t) / 255)
+                    o[i + 3] = 255
+                }
+            }
+        }
+        return octx.makeImage()
+    }
+
+    /// Tint a grayscale image to the label currently being edited.
+    func tintedDesign(_ gray: CGImage) -> CGImage? { tinted(gray, tape: designTape, text: designText) }
 
     func delete(id: LabelCell.ID) {
         guard cells.count > 1 else { return }   // keep at least one cell
@@ -212,7 +274,8 @@ final class PrinterController: ObservableObject {
         guard let ctx = modelContext else { return }
         let baked = bakeImages(cells)
         ctx.insert(SavedLabelModel(name: labelName(baked), cells: baked,
-                                   cellSpacingMM: cellSpacingMM, kind: .favorite))
+                                   cellSpacingMM: cellSpacingMM, kind: .favorite,
+                                   tapeColor: Int(designTape), textColor: Int(designText)))
         try? ctx.save()
     }
 
@@ -220,7 +283,8 @@ final class PrinterController: ObservableObject {
     func saveFavorite(from item: SavedLabelModel) {
         guard let ctx = modelContext else { return }
         ctx.insert(SavedLabelModel(name: item.name, cells: item.cells,
-                                   cellSpacingMM: item.cellSpacingMM, kind: .favorite))
+                                   cellSpacingMM: item.cellSpacingMM, kind: .favorite,
+                                   tapeColor: item.tapeColor, textColor: item.textColor))
         try? ctx.save()
     }
 
@@ -237,7 +301,8 @@ final class PrinterController: ObservableObject {
             dup.createdAt = Date(); try? ctx.save(); return
         }
         ctx.insert(SavedLabelModel(name: labelName(cells), cells: cells,
-                                   cellSpacingMM: spacingMM, kind: .history))
+                                   cellSpacingMM: spacingMM, kind: .history,
+                                   tapeColor: Int(designTape), textColor: Int(designText)))
         try? ctx.save()
         trimHistory(ctx)
     }
@@ -254,12 +319,15 @@ final class PrinterController: ObservableObject {
 
     func load(_ fav: SavedLabelModel) {
         cells = fav.cells; cellSpacingMM = fav.cellSpacingMM; selectedID = cells.first?.id
+        designTape = UInt8(clamping: fav.tapeColor); designText = UInt8(clamping: fav.textColor)
     }
 
     func newLabel() {
         cells = [LabelCell(kind: .text, text: "Text")]
         cellSpacingMM = 2.7
         selectedID = cells.first?.id
+        // Default a new label to the installed tape (if known).
+        if let s = status { designTape = s.tapeColor; designText = s.textColor }
     }
 
     func delete(_ fav: SavedLabelModel) {
@@ -272,11 +340,13 @@ final class PrinterController: ObservableObject {
     func refreshStatus() async {
         _ = await perform("Connecting…") { t in
             let s = try t.queryStatus(timeout: 6)
-            return (s, "Tape \(s.mediaWidthMM)mm — \(s.isReadyToPrint ? "ready" : "not ready")", true)
+            let msg = String(format: "Tape %dmm · tape 0x%02X / text 0x%02X · %@",
+                             s.mediaWidthMM, s.tapeColor, s.textColor, s.isReadyToPrint ? "ready" : "not ready")
+            return (s, msg, true)
         }
     }
 
-    func printCurrent() async {
+    func printCurrent(force: Bool = false) async {
         let n = max(1, copies)
         let gap = max(0, Int((spacingMM / 0.149).rounded()))
         let strip = 18   // end-margin dots at the very ends of the strip
@@ -300,13 +370,21 @@ final class PrinterController: ObservableObject {
         let rows = all
         let length = Double(rows.count) * 0.149 / 10
         let snapshotCells = cells, snapshotSpacing = cellSpacingMM
+        let dTape = designTape
         let printed = await perform(n > 1 ? "Printing \(n) labels…" : "Printing…") { t in
             let s = try t.queryStatus(timeout: 6)
             guard s.isReadyToPrint else { return (s, "Printer not ready: \(s.summary)", false) }
+            // Confirm the freshly-queried installed tape matches the design tape.
+            if !force && s.tapeColor != dTape { return (s, Self.mismatchSentinel, false) }
             _ = try PrintJob.send(rows: rows, status: s, to: t)
             return (s, String(format: "Printed %d (~%.1f cm)", n, length), true)
         }
-        if printed { logHistory(cells: snapshotCells, spacingMM: snapshotSpacing) }
+        if printed {
+            logHistory(cells: snapshotCells, spacingMM: snapshotSpacing)
+        } else if message == Self.mismatchSentinel {
+            message = "Wrong tape loaded"
+            pendingMismatchPrint = true
+        }
     }
 
     private static func blankRows(_ n: Int) -> [[UInt8]] {
@@ -390,16 +468,65 @@ extension Array {
 }
 
 enum TapeColor {
-    static func color(_ code: UInt8) -> Color {
+    /// Display RGB for a tape/text colour code. Confirmed on this unit: white tape
+    /// 0x01, black text 0x08; the other codes are best-effort until validated
+    /// against physical coloured tapes.
+    static func rgb(_ code: UInt8) -> (r: UInt8, g: UInt8, b: UInt8) {
         switch code {
-        case 0x01: return .white
-        case 0x04: return .red
-        case 0x05: return .blue
-        case 0x06: return .yellow
-        case 0x07: return .green
-        case 0x08: return .black
-        case 0x03, 0x09: return Color(white: 0.95)
-        default: return .gray
+        case 0x01: return (255, 255, 255)       // white
+        case 0x04: return (214, 48, 49)         // red
+        case 0x05: return (33, 99, 199)         // blue
+        case 0x06: return (247, 214, 51)        // yellow
+        case 0x07: return (40, 160, 78)         // green
+        case 0x08: return (26, 26, 28)          // black
+        case 0x0A: return (201, 167, 74)        // gold (text code provisional)
+        case 0x40: return (255, 122, 26)        // fluorescent orange
+        case 0x41: return (214, 247, 38)        // fluorescent yellow
+        case 0x03, 0x09: return (244, 244, 246) // clear / other (light)
+        default: return (142, 142, 147)         // unknown
         }
+    }
+
+    static func color(_ code: UInt8) -> Color {
+        let c = rgb(code)
+        return Color(red: Double(c.r) / 255, green: Double(c.g) / 255, blue: Double(c.b) / 255)
+    }
+
+    /// Clear/transparent tapes — shown with a checkerboard rather than a colour.
+    static func isClear(_ code: UInt8) -> Bool { code == 0x03 || code == 0x09 }
+}
+
+/// A curated set of common 12 mm Brother TZe tapes as text-on-background pairs.
+/// The codes follow the printer's status colour bytes; non-white entries are
+/// best-effort pending validation against physical tapes.
+struct TapePreset: Identifiable, Hashable {
+    let name: String
+    let tape: UInt8
+    let text: UInt8
+    var id: String { name }
+
+    static let all: [TapePreset] = [
+        .init(name: "Black on White",     tape: 0x01, text: 0x08),
+        .init(name: "Black on Clear",     tape: 0x09, text: 0x08),
+        .init(name: "White on Black",     tape: 0x08, text: 0x01),
+        .init(name: "Gold on Black",      tape: 0x08, text: 0x0A),   // TZe-334
+        .init(name: "Black on Red",       tape: 0x04, text: 0x08),
+        .init(name: "White on Red",       tape: 0x04, text: 0x01),
+        .init(name: "Black on Yellow",    tape: 0x06, text: 0x08),   // TZe-631
+        .init(name: "Black on Green",     tape: 0x07, text: 0x08),
+        .init(name: "White on Green",     tape: 0x07, text: 0x01),
+        .init(name: "Black on Blue",      tape: 0x05, text: 0x08),
+        .init(name: "White on Blue",      tape: 0x05, text: 0x01),
+        .init(name: "Red on White",       tape: 0x01, text: 0x04),
+        .init(name: "Blue on White",      tape: 0x01, text: 0x05),
+        .init(name: "Black on Fl Orange", tape: 0x40, text: 0x08),
+        .init(name: "Black on Fl Yellow", tape: 0x41, text: 0x08),
+    ]
+
+    /// A display name for a tape/text code pair (falls back to the tape code).
+    static func name(tape: UInt8, text: UInt8) -> String {
+        all.first { $0.tape == tape && $0.text == text }?.name
+            ?? all.first { $0.tape == tape }?.name
+            ?? String(format: "Tape 0x%02X", tape)
     }
 }

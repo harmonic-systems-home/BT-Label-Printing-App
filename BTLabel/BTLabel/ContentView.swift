@@ -63,6 +63,15 @@ struct PrinterStatusBar: View {
             .disabled(c.isBusy || c.rendered == nil)
         }
         .padding(.horizontal).padding(.vertical, 8)
+        .alert("Wrong tape loaded", isPresented: Binding(get: { c.pendingMismatchPrint },
+                                                         set: { c.pendingMismatchPrint = $0 })) {
+            Button("Print Anyway") { Task { await c.printCurrent(force: true) } }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("This label is designed for \(TapePreset.name(tape: c.designTape, text: c.designText)), "
+                 + "but \(c.status.map { TapePreset.name(tape: $0.tapeColor, text: $0.textColor) } ?? "another tape") "
+                 + "is loaded.")
+        }
     }
 }
 
@@ -74,6 +83,7 @@ struct EditorPanel: View {
         VStack(alignment: .leading, spacing: 16) {
             HStack {
                 Button { c.newLabel() } label: { Label("New", systemImage: "doc.badge.plus") }
+                TapeMenu()
                 Spacer()
                 HStack(spacing: 8) {
                     Button { c.addCell(.text) } label: { Label("Aa", systemImage: "plus") }
@@ -112,6 +122,76 @@ struct EditorPanel: View {
     }
 }
 
+// MARK: - Tape picker
+
+/// A transparency-style checkerboard, used to represent clear tape.
+struct Checkerboard: View {
+    var square: CGFloat = 7
+    var body: some View {
+        Canvas { ctx, size in
+            ctx.fill(Path(CGRect(origin: .zero, size: size)), with: .color(Color(white: 0.96)))
+            let cols = Int(ceil(size.width / square)), rows = Int(ceil(size.height / square))
+            for r in 0..<max(rows, 0) {
+                for col in 0..<max(cols, 0) where (r + col) % 2 == 0 {
+                    ctx.fill(Path(CGRect(x: CGFloat(col) * square, y: CGFloat(r) * square,
+                                         width: square, height: square)),
+                             with: .color(Color(white: 0.70)))
+                }
+            }
+        }
+    }
+}
+
+/// Background for a tape: a solid colour, or a checkerboard for clear tape.
+struct TapeBackground: View {
+    let code: UInt8
+    var body: some View {
+        ZStack {
+            if TapeColor.isClear(code) { Checkerboard() } else { TapeColor.color(code) }
+        }
+    }
+}
+
+/// A small swatch showing a tape (background) and its text colour (an "A").
+struct TapeSwatch: View {
+    let tape: UInt8
+    let text: UInt8
+    var body: some View {
+        TapeBackground(code: tape)
+            .frame(width: 26, height: 15)
+            .overlay(Text("A").font(.system(size: 10, weight: .bold)).foregroundStyle(TapeColor.color(text)))
+            .clipShape(RoundedRectangle(cornerRadius: 3))
+            .overlay(RoundedRectangle(cornerRadius: 3).stroke(.secondary.opacity(0.4)))
+    }
+}
+
+/// Picks the tape this label is designed for (drives the tinted preview and the
+/// print-time mismatch warning). The swatch sits *outside* the Menu because macOS
+/// menu labels don't honour a custom view's frame.
+struct TapeMenu: View {
+    @EnvironmentObject private var c: PrinterController
+    var body: some View {
+        HStack(spacing: 6) {
+            TapeSwatch(tape: c.designTape, text: c.designText)
+            Menu {
+                ForEach(TapePreset.all) { p in
+                    Button { c.setDesignTape(p) } label: {
+                        if c.designTape == p.tape && c.designText == p.text {
+                            Label(p.name, systemImage: "checkmark")
+                        } else {
+                            Text(p.name)
+                        }
+                    }
+                }
+            } label: {
+                Text(TapePreset.name(tape: c.designTape, text: c.designText)).lineLimit(1).font(.callout)
+            }
+            .menuStyle(.borderlessButton).fixedSize()
+        }
+        .help("Tape this label is designed for")
+    }
+}
+
 struct InteractivePreview: View {
     @EnvironmentObject private var c: PrinterController
     private let tapeH: CGFloat = 84
@@ -129,7 +209,6 @@ struct InteractivePreview: View {
     }
 
     var body: some View {
-        let tape = c.status.map { TapeColor.color($0.tapeColor) } ?? .white
         let imgH = tapeH * printFraction
         let scale = imgH / 64
         let items: [CellRender] = c.cells.map { cell in
@@ -139,7 +218,8 @@ struct InteractivePreview: View {
             // sandbox can't read) would be ~1px wide and impossible to select or
             // delete — give it a visible placeholder width.
             let width = cg == nil ? max(CGFloat(dots) * scale, 26) : CGFloat(dots) * scale
-            return CellRender(id: cell.id, image: cg, dots: dots, width: width)
+            // Show the cell in the design tape's colours (ink = text, bg = tape).
+            return CellRender(id: cell.id, image: cg.flatMap { c.tintedDesign($0) } ?? cg, dots: dots, width: width)
         }
         let gap = CGFloat(c.cellSpacingDots) * scale
         let margin = marginDots * scale
@@ -150,7 +230,7 @@ struct InteractivePreview: View {
                 VStack(spacing: 3) {
                     if items.count > 1 { ruler(items, gap: gap, margin: margin, totalW: totalW) }
                     ZStack(alignment: .leading) {
-                        Rectangle().fill(tape)
+                        TapeBackground(code: c.designTape)
                         HStack(spacing: 0) {
                             Color.clear.frame(width: margin)
                             ForEach(Array(items.enumerated()), id: \.element.id) { idx, item in
@@ -465,10 +545,12 @@ struct FavoritesSidebar: View {
 
     @ViewBuilder private func row(_ item: SavedLabelModel) -> some View {
         Group {
-            if let cg = c.previewImage(item.cells, spacingMM: item.cellSpacingMM) {
+            if let raw = c.previewImage(item.cells, spacingMM: item.cellSpacingMM) {
+                let tape = UInt8(clamping: item.tapeColor), text = UInt8(clamping: item.textColor)
+                let cg = c.tinted(raw, tape: tape, text: text) ?? raw
                 Image(decorative: cg, scale: 1).resizable().interpolation(.none)
                     .aspectRatio(CGFloat(cg.width) / CGFloat(cg.height), contentMode: .fit)
-                    .frame(height: 34).padding(.horizontal, 3).background(.white)
+                    .frame(height: 34).padding(.horizontal, 3).background(TapeBackground(code: tape))
                     .clipShape(RoundedRectangle(cornerRadius: 4))
                     .frame(maxWidth: 168, alignment: .leading).clipped()
             } else {
