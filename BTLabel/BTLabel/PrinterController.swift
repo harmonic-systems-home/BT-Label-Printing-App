@@ -61,6 +61,12 @@ final class PrinterController: ObservableObject {
     @Published var pendingMismatchPrint = false
     static let mismatchSentinel = "\u{1}tape-mismatch"
 
+    /// Free-trial print allowance (designing & favorites are always free). Once the
+    /// unlock is purchased the count is ignored. Persisted locally.
+    static let freePrintLimit = 5
+    @Published private(set) var printsUsed = UserDefaults.standard.integer(forKey: "printsUsed")
+    var freePrintsLeft: Int { max(0, Self.freePrintLimit - printsUsed) }
+
     // Contact fields used by /n /p /s /e tokens. Persisted via SwiftData/iCloud
     // (see AppSettings) so they sync across devices and survive restarts.
     @Published var contactName = ""  { didSet { saveContact() } }
@@ -415,6 +421,8 @@ final class PrinterController: ObservableObject {
         }
         if printed {
             logHistory(cells: snapshotCells, spacingMM: snapshotSpacing)
+            printsUsed += 1
+            UserDefaults.standard.set(printsUsed, forKey: "printsUsed")
         } else if message == Self.mismatchSentinel {
             message = "Wrong tape loaded"
             pendingMismatchPrint = true

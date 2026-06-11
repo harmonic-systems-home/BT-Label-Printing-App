@@ -10,6 +10,7 @@ private let fontChoices = [
 
 struct ContentView: View {
     @EnvironmentObject private var c: PrinterController
+    @EnvironmentObject private var store: StoreManager
     @Environment(\.modelContext) private var modelContext
     @State private var showSettings = false
     @State private var didInitialFocus = false
@@ -28,7 +29,7 @@ struct ContentView: View {
                 ToolbarItem { Button { showSettings = true } label: { Image(systemName: "gearshape") } }
             }
         }
-        .sheet(isPresented: $showSettings) { SettingsSheet().environmentObject(c) }
+        .sheet(isPresented: $showSettings) { SettingsSheet().environmentObject(c).environmentObject(store) }
         .onAppear {
             c.modelContext = modelContext
             // Focus + select the default label text so the user can just start typing.
@@ -41,6 +42,9 @@ struct ContentView: View {
 
 struct PrinterStatusBar: View {
     @EnvironmentObject private var c: PrinterController
+    @EnvironmentObject private var store: StoreManager
+    @State private var showPurchase = false
+    private var canPrint: Bool { store.isUnlocked || c.freePrintsLeft > 0 }
     var body: some View {
         HStack(spacing: 12) {
             Image(systemName: "printer")
@@ -60,7 +64,16 @@ struct PrinterStatusBar: View {
                 }.font(.callout)
             }
             Spacer()
-            Button { Task { await c.printCurrent() } } label: {
+            if !store.isUnlocked {
+                Button { showPurchase = true } label: {
+                    Text("\(c.freePrintsLeft) free prints left").font(.caption)
+                }
+                .buttonStyle(.plain).foregroundStyle(.secondary)
+                .help("Free trial — unlock unlimited printing")
+            }
+            Button {
+                if canPrint { Task { await c.printCurrent() } } else { showPurchase = true }
+            } label: {
                 Label(c.copies > 1 ? "Print \(c.copies)" : "Print", systemImage: "printer.fill")
                     .frame(minWidth: 80)
             }
@@ -69,6 +82,7 @@ struct PrinterStatusBar: View {
             .disabled(c.isBusy || c.rendered == nil)
         }
         .padding(.horizontal).padding(.vertical, 8)
+        .sheet(isPresented: $showPurchase) { PurchaseView().environmentObject(store).environmentObject(c) }
         .alert("Wrong tape loaded", isPresented: Binding(get: { c.pendingMismatchPrint },
                                                          set: { c.pendingMismatchPrint = $0 })) {
             Button("Print Anyway") { Task { await c.printCurrent(force: true) } }
@@ -405,7 +419,9 @@ struct PrintOptionsView: View {
 
 struct SettingsSheet: View {
     @EnvironmentObject private var c: PrinterController
+    @EnvironmentObject private var store: StoreManager
     @Environment(\.dismiss) private var dismiss
+    @State private var showPurchase = false
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             Text("Contact").font(.headline)
@@ -417,9 +433,25 @@ struct SettingsSheet: View {
             }
             Text("Used by the /n /p /s /e text tokens. /d inserts today's date. These are saved between launches.")
                 .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+
+            Divider()
+            Text("License").font(.headline)
+            if store.isUnlocked {
+                Label("Full version — purchased", systemImage: "checkmark.seal.fill").foregroundStyle(.green)
+            } else {
+                HStack {
+                    Text("Free trial — \(c.freePrintsLeft) of \(PrinterController.freePrintLimit) prints left")
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                    Button("Unlock…") { showPurchase = true }
+                }
+                Button("Restore Purchase") { Task { await store.restore() } }.buttonStyle(.link)
+            }
+
             HStack { Spacer(); Button("Done") { dismiss() }.keyboardShortcut(.defaultAction) }
         }
         .padding(20).frame(width: 380)
+        .sheet(isPresented: $showPurchase) { PurchaseView().environmentObject(store).environmentObject(c) }
     }
 }
 

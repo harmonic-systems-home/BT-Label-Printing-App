@@ -18,12 +18,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 struct BTLabelApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
     @StateObject private var controller = PrinterController()
+    @StateObject private var store = StoreManager()
     private let container = BTLabelApp.makeContainer()
 
     var body: some Scene {
         WindowGroup {
             ContentView()
                 .environmentObject(controller)
+                .environmentObject(store)
                 .frame(minWidth: 720, minHeight: 480)
         }
         .defaultSize(width: 820, height: 560)
