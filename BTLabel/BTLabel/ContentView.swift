@@ -1,6 +1,7 @@
 import SwiftUI
 import SwiftData
 import AppKit
+import UniformTypeIdentifiers
 import PTouchKit
 
 private let fontChoices = [
@@ -704,16 +705,42 @@ struct FavoritesSidebar: View {
     /// folder followed (when expanded) by its subfolders and favorites. No
     /// indentation — hierarchy is conveyed by collapse/expand.
     private func favRows() -> [FavRow] {
+        func items(_ folderID: UUID?) -> [SavedLabelModel] {
+            favorites.filter { $0.folderID == folderID }
+                .sorted { ($0.sortIndex, -$0.createdAt.timeIntervalSince1970) < ($1.sortIndex, -$1.createdAt.timeIntervalSince1970) }
+        }
+        func subs(_ parentID: UUID?) -> [FavoriteFolder] {
+            folders.filter { $0.parentID == parentID }
+                .sorted { ($0.sortIndex, $0.createdAt.timeIntervalSince1970) < ($1.sortIndex, $1.createdAt.timeIntervalSince1970) }
+        }
         var rows: [FavRow] = []
-        for fav in favorites where fav.folderID == nil { rows.append(.item(fav)) }
+        for fav in items(nil) { rows.append(.item(fav)) }
         func add(_ folder: FavoriteFolder) {
             rows.append(.folder(folder))
             guard folder.expanded else { return }
-            for child in folders where child.parentID == folder.id { add(child) }
-            for fav in favorites where fav.folderID == folder.id { rows.append(.item(fav)) }
+            for child in subs(folder.id) { add(child) }
+            for fav in items(folder.id) { rows.append(.item(fav)) }
         }
-        for f in folders where f.parentID == nil { add(f) }
+        for f in subs(nil) { add(f) }
         return rows
+    }
+
+    // MARK: Drag & drop helpers
+
+    private func favorite(_ id: String) -> SavedLabelModel? {
+        guard id.hasPrefix("i-"), let u = UUID(uuidString: String(id.dropFirst(2))) else { return nil }
+        return favorites.first { $0.id == u }
+    }
+    private func folderBy(_ id: String) -> FavoriteFolder? {
+        guard id.hasPrefix("f-"), let u = UUID(uuidString: String(id.dropFirst(2))) else { return nil }
+        return folders.first { $0.id == u }
+    }
+    private func receiveDrop(_ providers: [NSItemProvider], _ action: @escaping (String) -> Void) -> Bool {
+        guard let p = providers.first else { return false }
+        p.loadObject(ofClass: NSString.self) { obj, _ in
+            if let s = obj as? String { DispatchQueue.main.async { action(s) } }
+        }
+        return true
     }
 
     var body: some View {
@@ -730,10 +757,40 @@ struct FavoritesSidebar: View {
                         if rows.isEmpty { Text("No favorites yet").foregroundStyle(.secondary) }
                         ForEach(rows) { row in
                             switch row {
-                            case .folder(let f): folderHeader(f).id(row.id)
-                            case .item(let item): itemRow(item).id(row.id)
+                            case .folder(let f):
+                                folderHeader(f).id(row.id)
+                                    .onDrag { NSItemProvider(object: "f-\(f.id.uuidString)" as NSString) }
+                                    .onDrop(of: [.text], isTargeted: nil) { providers in
+                                        receiveDrop(providers) { s in
+                                            if let it = favorite(s) { c.moveFavorite(it, toFolder: f.id) }
+                                            else if let dragged = folderBy(s) { c.nestFolder(dragged, under: f.id) }
+                                        }
+                                    }
+                            case .item(let item):
+                                itemRow(item).id(row.id)
+                                    .onDrag { NSItemProvider(object: "i-\(item.id.uuidString)" as NSString) }
+                                    .onDrop(of: [.text], isTargeted: nil) { providers in
+                                        receiveDrop(providers) { s in
+                                            if let dragged = favorite(s), dragged.id != item.id {
+                                                c.reorderFavorite(dragged, before: item)
+                                            }
+                                        }
+                                    }
                             }
                         }
+                        // Empty space below the list: right-click to add a folder, or
+                        // drop here to move a label/folder to the top level.
+                        Color.clear.frame(height: 80).listRowSeparator(.hidden)
+                            .contentShape(Rectangle())
+                            .contextMenu {
+                                Button { promptRename(c.addFolder()) } label: { Label("New Folder", systemImage: "folder.badge.plus") }
+                            }
+                            .onDrop(of: [.text], isTargeted: nil) { providers in
+                                receiveDrop(providers) { s in
+                                    if let it = favorite(s) { c.moveFavorite(it, toFolder: nil) }
+                                    else if let dragged = folderBy(s) { c.nestFolder(dragged, under: nil) }
+                                }
+                            }
                     } else {
                         if history.isEmpty { Text("No history yet").foregroundStyle(.secondary) }
                         ForEach(history) { item in itemRow(item).id("i-\(item.id.uuidString)") }

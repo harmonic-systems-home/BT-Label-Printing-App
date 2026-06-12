@@ -30,6 +30,9 @@ final class SavedLabelModel {
     /// The favorites folder this label belongs to (nil = top-level/ungrouped).
     /// Only meaningful for favorites.
     var folderID: UUID? = nil
+    /// Manual order within its container (ascending). Ties break by createdAt
+    /// (newest first), so default-0 favorites keep the newest-first look.
+    var sortIndex: Double = 0
 
     /// The decoded cells (not itself persisted; backed by `cellsData`).
     var cells: [LabelCell] {
@@ -90,6 +93,8 @@ final class FavoriteFolder {
     var colorIndex: Int = 0
     /// Whether the folder is expanded (its contents shown).
     var expanded: Bool = true
+    /// Manual order among siblings (ascending).
+    var sortIndex: Double = 0
 
     init(name: String, parentID: UUID? = nil, colorIndex: Int = 0) {
         self.name = name

@@ -311,18 +311,22 @@ final class PrinterController: ObservableObject {
     func saveFavorite() {
         guard let ctx = modelContext else { return }
         let baked = bakeImages(cells)
-        ctx.insert(SavedLabelModel(name: labelName(baked), cells: baked,
-                                   cellSpacingMM: cellSpacingMM, kind: .favorite,
-                                   tapeColor: Int(designTape), textColor: Int(designText)))
+        let new = SavedLabelModel(name: labelName(baked), cells: baked,
+                                  cellSpacingMM: cellSpacingMM, kind: .favorite,
+                                  tapeColor: Int(designTape), textColor: Int(designText))
+        new.sortIndex = (favoritesIn(nil).map(\.sortIndex).min() ?? 0) - 1   // top of top-level
+        ctx.insert(new)
         try? ctx.save()
     }
 
     /// Promote a history entry to Favorites (copy; the history record stays).
     func saveFavorite(from item: SavedLabelModel) {
         guard let ctx = modelContext else { return }
-        ctx.insert(SavedLabelModel(name: item.name, cells: item.cells,
-                                   cellSpacingMM: item.cellSpacingMM, kind: .favorite,
-                                   tapeColor: item.tapeColor, textColor: item.textColor))
+        let new = SavedLabelModel(name: item.name, cells: item.cells,
+                                  cellSpacingMM: item.cellSpacingMM, kind: .favorite,
+                                  tapeColor: item.tapeColor, textColor: item.textColor)
+        new.sortIndex = (favoritesIn(nil).map(\.sortIndex).min() ?? 0) - 1
+        ctx.insert(new)
         try? ctx.save()
     }
 
@@ -415,8 +419,57 @@ final class PrinterController: ObservableObject {
         ctx.delete(folder); try? ctx.save()
     }
 
+    /// Move a favorite into a folder (nil = top level), appended at the end.
     func moveFavorite(_ fav: SavedLabelModel, toFolder folderID: UUID?) {
-        fav.folderID = folderID; try? modelContext?.save()
+        fav.folderID = folderID
+        fav.sortIndex = (favoritesIn(folderID).filter { $0 !== fav }.map(\.sortIndex).max() ?? -1) + 1
+        try? modelContext?.save()
+    }
+
+    /// Reorder a favorite to sit just before `target`, adopting target's folder.
+    func reorderFavorite(_ fav: SavedLabelModel, before target: SavedLabelModel) {
+        guard fav !== target else { return }
+        fav.folderID = target.folderID
+        var ordered = favoritesIn(target.folderID).filter { $0 !== fav }
+        guard let i = ordered.firstIndex(where: { $0 === target }) else { return }
+        ordered.insert(fav, at: i)
+        for (n, f) in ordered.enumerated() { f.sortIndex = Double(n) }
+        try? modelContext?.save()
+    }
+
+    /// Re-parent a folder (nil = top level), guarding against cycles.
+    func nestFolder(_ folder: FavoriteFolder, under parentID: UUID?) {
+        guard folder.id != parentID, !wouldCycle(setting: parentID, on: folder) else { return }
+        folder.parentID = parentID
+        folder.sortIndex = (subfolders(parentID).filter { $0 !== folder }.map(\.sortIndex).max() ?? -1) + 1
+        if let pid = parentID { self.folder(withID: pid)?.expanded = true }
+        try? modelContext?.save()
+    }
+
+    /// Favorites in a container, in display order (sortIndex, then newest first).
+    func favoritesIn(_ folderID: UUID?) -> [SavedLabelModel] {
+        let fav = SavedLabelModel.Kind.favorite.rawValue
+        let all = (try? modelContext?.fetch(FetchDescriptor<SavedLabelModel>(
+            predicate: #Predicate { $0.kind == fav }))) ?? []
+        return all.filter { $0.folderID == folderID }
+            .sorted { ($0.sortIndex, -$0.createdAt.timeIntervalSince1970) < ($1.sortIndex, -$1.createdAt.timeIntervalSince1970) }
+    }
+
+    /// Subfolders of a folder (nil = top level), in display order.
+    func subfolders(_ parentID: UUID?) -> [FavoriteFolder] {
+        let all = (try? modelContext?.fetch(FetchDescriptor<FavoriteFolder>())) ?? []
+        return all.filter { $0.parentID == parentID }
+            .sorted { ($0.sortIndex, $0.createdAt.timeIntervalSince1970) < ($1.sortIndex, $1.createdAt.timeIntervalSince1970) }
+    }
+
+    /// True if setting `parent` as `folder`'s parent would create a cycle.
+    private func wouldCycle(setting parent: UUID?, on folder: FavoriteFolder) -> Bool {
+        var cur = parent
+        while let id = cur {
+            if id == folder.id { return true }
+            cur = self.folder(withID: id)?.parentID
+        }
+        return false
     }
 
     private func folder(withID id: UUID) -> FavoriteFolder? {
