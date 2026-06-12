@@ -36,7 +36,7 @@ struct BTLabelApp: App {
     /// isn't fully configured yet (e.g. no container selected), so the app never
     /// crashes on launch.
     static func makeContainer() -> ModelContainer {
-        let schema = Schema([SavedLabelModel.self, AppSettings.self])
+        let schema = Schema([SavedLabelModel.self, AppSettings.self, FavoriteFolder.self])
         do {
             return try ModelContainer(for: schema,
                 configurations: ModelConfiguration(schema: schema, cloudKitDatabase: .automatic))

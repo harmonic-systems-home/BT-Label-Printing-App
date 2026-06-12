@@ -27,6 +27,9 @@ final class SavedLabelModel {
     /// for CloudKit). Default: black text (0x08) on white tape (0x01).
     var tapeColor: Int = 1
     var textColor: Int = 8
+    /// The favorites folder this label belongs to (nil = top-level/ungrouped).
+    /// Only meaningful for favorites.
+    var folderID: UUID? = nil
 
     /// The decoded cells (not itself persisted; backed by `cellsData`).
     var cells: [LabelCell] {
@@ -72,4 +75,25 @@ final class AppSettings {
     var updatedAt: Date = Date()
 
     init() {}
+}
+
+/// A folder for organizing favorites. Nestable via `parentID` (rendered flat, no
+/// indentation). CloudKit-compatible (all defaults, no unique constraints).
+@Model
+final class FavoriteFolder {
+    var id: UUID = UUID()
+    var name: String = ""
+    /// Parent folder (nil = top level). Enables nesting.
+    var parentID: UUID? = nil
+    var createdAt: Date = Date()
+    /// Index into the folder colour palette (see FolderPalette).
+    var colorIndex: Int = 0
+    /// Whether the folder is expanded (its contents shown).
+    var expanded: Bool = true
+
+    init(name: String, parentID: UUID? = nil, colorIndex: Int = 0) {
+        self.name = name
+        self.parentID = parentID
+        self.colorIndex = colorIndex
+    }
 }

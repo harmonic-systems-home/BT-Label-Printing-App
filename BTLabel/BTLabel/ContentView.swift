@@ -678,15 +678,43 @@ private struct IconCell: View {
 
 // MARK: - Favorites
 
+private enum FavRow: Identifiable {
+    case folder(FavoriteFolder)
+    case item(SavedLabelModel)
+    var id: String {
+        switch self {
+        case .folder(let f): return "f-\(f.id.uuidString)"
+        case .item(let i): return "i-\(i.id.uuidString)"
+        }
+    }
+}
+
 struct FavoritesSidebar: View {
     @EnvironmentObject private var c: PrinterController
     @State private var tab = 0   // 0 = Favorites, 1 = History
+    @State private var renamingFolder: FavoriteFolder?
+    @State private var renameText = ""
     @Query(filter: #Predicate<SavedLabelModel> { $0.kind == "favorite" },
            sort: \SavedLabelModel.createdAt, order: .reverse) private var favorites: [SavedLabelModel]
     @Query(filter: #Predicate<SavedLabelModel> { $0.kind == "history" },
            sort: \SavedLabelModel.createdAt, order: .reverse) private var history: [SavedLabelModel]
+    @Query(sort: \FavoriteFolder.createdAt) private var folders: [FavoriteFolder]
 
-    private var items: [SavedLabelModel] { tab == 0 ? favorites : history }
+    /// Flattened display order: ungrouped favorites first, then each top-level
+    /// folder followed (when expanded) by its subfolders and favorites. No
+    /// indentation — hierarchy is conveyed by collapse/expand.
+    private func favRows() -> [FavRow] {
+        var rows: [FavRow] = []
+        for fav in favorites where fav.folderID == nil { rows.append(.item(fav)) }
+        func add(_ folder: FavoriteFolder) {
+            rows.append(.folder(folder))
+            guard folder.expanded else { return }
+            for child in folders where child.parentID == folder.id { add(child) }
+            for fav in favorites where fav.folderID == folder.id { rows.append(.item(fav)) }
+        }
+        for f in folders where f.parentID == nil { add(f) }
+        return rows
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -697,23 +725,73 @@ struct FavoritesSidebar: View {
             Divider()
             ScrollViewReader { proxy in
                 List {
-                    if items.isEmpty {
-                        Text(tab == 0 ? "No favorites yet" : "No history yet").foregroundStyle(.secondary)
+                    if tab == 0 {
+                        let rows = favRows()
+                        if rows.isEmpty { Text("No favorites yet").foregroundStyle(.secondary) }
+                        ForEach(rows) { row in
+                            switch row {
+                            case .folder(let f): folderHeader(f).id(row.id)
+                            case .item(let item): itemRow(item).id(row.id)
+                            }
+                        }
+                    } else {
+                        if history.isEmpty { Text("No history yet").foregroundStyle(.secondary) }
+                        ForEach(history) { item in itemRow(item).id("i-\(item.id.uuidString)") }
                     }
-                    ForEach(items) { item in row(item).id(item.id) }
-                        .onDelete { idxs in idxs.forEach { c.delete(items[$0]) } }
                 }
-                // A newly saved/printed label is inserted at the top; snap (no
-                // animation) so it lands at the top in place rather than the whole
-                // column visibly sliding down to reveal it.
-                .onChange(of: items.first?.id) { _, newID in
-                    if let id = newID { proxy.scrollTo(id, anchor: .top) }
+                // A newly saved/printed label is inserted at the top; snap it into view.
+                .onChange(of: tab == 0 ? favorites.first?.id : history.first?.id) { _, newID in
+                    if let id = newID { proxy.scrollTo("i-\(id.uuidString)", anchor: .top) }
                 }
             }
-        }.frame(minWidth: 180)
+        }
+        .frame(minWidth: 180)
+        .alert("Rename Folder", isPresented: Binding(get: { renamingFolder != nil },
+                                                     set: { if !$0 { renamingFolder = nil } })) {
+            TextField("Name", text: $renameText)
+            Button("Rename") { if let f = renamingFolder { c.renameFolder(f, renameText) }; renamingFolder = nil }
+            Button("Cancel", role: .cancel) { renamingFolder = nil }
+        }
     }
 
-    @ViewBuilder private func row(_ item: SavedLabelModel) -> some View {
+    private func promptRename(_ folder: FavoriteFolder?) {
+        guard let folder else { return }
+        renameText = folder.name; renamingFolder = folder
+    }
+
+    // MARK: Folder header
+
+    @ViewBuilder private func folderHeader(_ f: FavoriteFolder) -> some View {
+        let color = FolderPalette.color(f.colorIndex)
+        HStack(spacing: 6) {
+            Image(systemName: f.expanded ? "chevron.down" : "chevron.right")
+                .font(.caption2).foregroundStyle(.secondary).frame(width: 9)
+            Image(systemName: "folder.fill").foregroundStyle(color).font(.callout)
+            Text(f.name.isEmpty ? "Folder" : f.name).font(.callout.weight(.medium)).lineLimit(1)
+            Spacer(minLength: 2)
+        }
+        .padding(.vertical, 4).padding(.horizontal, 6)
+        .background(color.opacity(0.20), in: RoundedRectangle(cornerRadius: 5))
+        .contentShape(Rectangle())
+        .onTapGesture { c.toggleFolder(f) }
+        .contextMenu {
+            Button { promptRename(c.addFolder()) } label: { Label("New Folder", systemImage: "folder.badge.plus") }
+            Button { promptRename(c.addFolder(parentID: f.id)) } label: { Label("New Subfolder", systemImage: "folder.fill.badge.plus") }
+            Button { promptRename(f) } label: { Label("Rename…", systemImage: "pencil") }
+            Menu("Color") {
+                ForEach(FolderPalette.colors.indices, id: \.self) { i in
+                    Button { c.setFolderColor(f, i) } label: {
+                        Label("Color \(i + 1)", systemImage: f.colorIndex == i ? "checkmark" : "circle")
+                    }
+                }
+            }
+            Button(role: .destructive) { c.deleteFolder(f) } label: { Label("Delete Folder", systemImage: "trash") }
+        }
+    }
+
+    // MARK: Item row (favorite or history)
+
+    @ViewBuilder private func itemRow(_ item: SavedLabelModel) -> some View {
         Group {
             if let raw = c.previewImage(item.cells, spacingMM: item.cellSpacingMM) {
                 let tape = UInt8(clamping: item.tapeColor), text = UInt8(clamping: item.textColor)
@@ -732,7 +810,20 @@ struct FavoritesSidebar: View {
         .onTapGesture { c.load(item) }
         .contextMenu {
             Button { c.load(item) } label: { Label("Load", systemImage: "tray.and.arrow.down") }
-            if !item.isFavorite {
+            if item.isFavorite {
+                Menu("Move to Folder") {
+                    Button { c.moveFavorite(item, toFolder: nil) } label: {
+                        Label("Top Level", systemImage: item.folderID == nil ? "checkmark" : "tray")
+                    }
+                    if !folders.isEmpty { Divider() }
+                    ForEach(folders) { f in
+                        Button { c.moveFavorite(item, toFolder: f.id) } label: {
+                            Label(f.name.isEmpty ? "Folder" : f.name, systemImage: item.folderID == f.id ? "checkmark" : "folder")
+                        }
+                    }
+                }
+                Button { promptRename(c.addFolder()) } label: { Label("New Folder", systemImage: "folder.badge.plus") }
+            } else {
                 Button { c.saveFavorite(from: item) } label: { Label("Save to Favorites", systemImage: "star") }
             }
             Button(role: .destructive) { c.delete(item) } label: { Label("Delete", systemImage: "trash") }

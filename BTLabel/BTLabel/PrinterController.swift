@@ -375,6 +375,54 @@ final class PrinterController: ObservableObject {
         try? modelContext?.save()
     }
 
+    // MARK: - Favorite folders
+
+    @discardableResult
+    func addFolder(parentID: UUID? = nil) -> FavoriteFolder? {
+        guard let ctx = modelContext else { return nil }
+        let count = (try? ctx.fetchCount(FetchDescriptor<FavoriteFolder>())) ?? 0
+        let newFolder = FavoriteFolder(name: "New Folder", parentID: parentID,
+                                       colorIndex: count % FolderPalette.colors.count)
+        ctx.insert(newFolder)
+        if let pid = parentID { folder(withID: pid)?.expanded = true }
+        try? ctx.save()
+        return newFolder
+    }
+
+    func renameFolder(_ folder: FavoriteFolder, _ name: String) {
+        folder.name = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        try? modelContext?.save()
+    }
+
+    func toggleFolder(_ folder: FavoriteFolder) {
+        folder.expanded.toggle(); try? modelContext?.save()
+    }
+
+    func setFolderColor(_ folder: FavoriteFolder, _ index: Int) {
+        folder.colorIndex = index; try? modelContext?.save()
+    }
+
+    /// Delete a folder; its favorites and subfolders move up to its parent.
+    func deleteFolder(_ folder: FavoriteFolder) {
+        guard let ctx = modelContext else { return }
+        let fid = folder.id, parent = folder.parentID
+        for fav in (try? ctx.fetch(FetchDescriptor<SavedLabelModel>())) ?? [] where fav.folderID == fid {
+            fav.folderID = parent
+        }
+        for sub in (try? ctx.fetch(FetchDescriptor<FavoriteFolder>())) ?? [] where sub.parentID == fid {
+            sub.parentID = parent
+        }
+        ctx.delete(folder); try? ctx.save()
+    }
+
+    func moveFavorite(_ fav: SavedLabelModel, toFolder folderID: UUID?) {
+        fav.folderID = folderID; try? modelContext?.save()
+    }
+
+    private func folder(withID id: UUID) -> FavoriteFolder? {
+        try? modelContext?.fetch(FetchDescriptor<FavoriteFolder>(predicate: #Predicate { $0.id == id })).first
+    }
+
     // MARK: - Printing
 
     func refreshStatus() async {
@@ -512,6 +560,18 @@ private enum BluetoothRunner {
 
 extension Array {
     subscript(safe i: Int) -> Element? { indices.contains(i) ? self[i] : nil }
+}
+
+enum FolderPalette {
+    static let colors: [Color] = [
+        Color(red: 0.30, green: 0.55, blue: 0.90),  // blue
+        Color(red: 0.30, green: 0.70, blue: 0.45),  // green
+        Color(red: 0.92, green: 0.60, blue: 0.25),  // orange
+        Color(red: 0.66, green: 0.45, blue: 0.86),  // purple
+        Color(red: 0.88, green: 0.42, blue: 0.46),  // rose
+        Color(red: 0.28, green: 0.70, blue: 0.74),  // teal
+    ]
+    static func color(_ index: Int) -> Color { colors[((index % colors.count) + colors.count) % colors.count] }
 }
 
 enum TapeColor {
