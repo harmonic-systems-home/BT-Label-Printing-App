@@ -44,4 +44,3 @@ fastlane/test_output
 
 # Misc
 *.log
-.btlabel-comp-private-key.txt

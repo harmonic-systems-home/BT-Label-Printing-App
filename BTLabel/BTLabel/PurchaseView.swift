@@ -6,8 +6,6 @@ struct PurchaseView: View {
     @EnvironmentObject private var store: StoreManager
     @EnvironmentObject private var c: PrinterController
     @Environment(\.dismiss) private var dismiss
-    @State private var keyInput = ""
-    @State private var redeemMessage: String?
 
     var body: some View {
         VStack(spacing: 16) {
@@ -50,22 +48,6 @@ struct PurchaseView: View {
 
             if let err = store.purchaseError {
                 Text(err).font(.caption).foregroundStyle(.red).multilineTextAlignment(.center)
-            }
-
-            if !store.isUnlocked {
-                Divider()
-                Text("Have a community key?").font(.caption).foregroundStyle(.secondary)
-                HStack {
-                    TextField("Paste key", text: $keyInput).textFieldStyle(.roundedBorder)
-                    Button("Redeem") {
-                        switch store.redeem(keyInput) {
-                        case .success: dismiss()
-                        case .expired: redeemMessage = "This key has expired."
-                        case .invalid: redeemMessage = "That key isn't valid."
-                        }
-                    }.disabled(keyInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                }
-                if let m = redeemMessage { Text(m).font(.caption).foregroundStyle(.red) }
             }
 
             Button(store.isUnlocked ? "Done" : "Not now") { dismiss() }

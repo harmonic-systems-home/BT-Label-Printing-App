@@ -33,11 +33,6 @@ let package = Package(
         .executableTarget(
             name: "pticongen"
         ),
-        // Dev-only: mints complimentary "redeem-by" unlock keys.
-        .executableTarget(
-            name: "btkeygen",
-            dependencies: ["PTouchKit"]
-        ),
         .testTarget(
             name: "PTouchKitTests",
             dependencies: ["PTouchKit"]
