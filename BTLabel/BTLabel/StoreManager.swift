@@ -1,6 +1,8 @@
 import Foundation
 import Combine
+import CryptoKit
 import StoreKit
+import PTouchKit
 
 /// Owns the one-time "unlock" in-app purchase. The app is free with a print-limited
 /// trial; buying the unlock removes the print limit. Everything else (design,
@@ -11,12 +13,36 @@ final class StoreManager: ObservableObject {
     /// the local .storekit test configuration).
     static let unlockProductID = "com.popperbiz.BTLabel.unlock"
 
+    /// Public key for verifying complimentary "redeem-by" keys (the private key is
+    /// kept out of the repo; mint keys with `swift run btkeygen`).
+    static let compPublicKeyB64 = "QbuFX8KvpIRyFLW62f0gD915RFXqN0Zy1cYZ5HiIUaQ="
+
     @Published private(set) var product: Product?
-    @Published private(set) var isUnlocked = false
+    /// Entitlement from a StoreKit purchase.
+    @Published private(set) var purchased = false
+    /// Lifetime unlock from redeeming a complimentary key (persisted locally).
+    @Published private(set) var compUnlocked = UserDefaults.standard.bool(forKey: "compUnlocked")
     /// True once a product fetch has completed (regardless of success), so the UI
     /// can distinguish "still loading" from "store unavailable".
     @Published private(set) var loaded = false
     @Published var purchaseError: String?
+
+    /// Unlocked by either a purchase or a redeemed comp key.
+    var isUnlocked: Bool { purchased || compUnlocked }
+
+    enum RedeemResult { case success, expired, invalid }
+
+    /// Redeem a complimentary key. Valid only if its signature checks out and the
+    /// current date is before its deadline; success unlocks for life.
+    func redeem(_ key: String) -> RedeemResult {
+        guard let pubData = Data(base64Encoded: Self.compPublicKeyB64),
+              let pub = try? Curve25519.Signing.PublicKey(rawRepresentation: pubData),
+              let deadline = CompKey.verifiedDeadline(key, publicKey: pub) else { return .invalid }
+        guard Date() < deadline else { return .expired }
+        compUnlocked = true
+        UserDefaults.standard.set(true, forKey: "compUnlocked")
+        return .success
+    }
 
     private var updates: Task<Void, Never>?
 
@@ -43,7 +69,7 @@ final class StoreManager: ObservableObject {
                 unlocked = true
             }
         }
-        isUnlocked = unlocked
+        purchased = unlocked
     }
 
     func purchase() async {
@@ -54,7 +80,7 @@ final class StoreManager: ObservableObject {
             case .success(let verification):
                 if case .verified(let transaction) = verification {
                     await transaction.finish()
-                    isUnlocked = true
+                    purchased = true
                 }
             case .userCancelled, .pending: break
             @unknown default: break
