@@ -592,6 +592,11 @@ struct LabelTextEditor: NSViewRepresentable {
 
     func updateNSView(_ nsView: NSScrollView, context: Context) {
         guard let tv = nsView.documentView as? NSTextView else { return }
+        // Keep the coordinator's binding current: SwiftUI recreates this struct on
+        // every update (e.g. when cells reorder and the bound index changes), but
+        // the coordinator persists. Without this, textDidChange writes through a
+        // stale binding (to the wrong cell) and edits silently vanish.
+        context.coordinator.parent = self
         if tv.string != text { tv.string = text }
         if focusToken != context.coordinator.lastFocusToken {
             context.coordinator.lastFocusToken = focusToken
@@ -606,7 +611,7 @@ struct LabelTextEditor: NSViewRepresentable {
     func makeCoordinator() -> Coordinator { Coordinator(self) }
 
     final class Coordinator: NSObject, NSTextViewDelegate {
-        let parent: LabelTextEditor
+        var parent: LabelTextEditor
         var lastFocusToken = 0
         init(_ parent: LabelTextEditor) { self.parent = parent }
         func textDidChange(_ notification: Notification) {
