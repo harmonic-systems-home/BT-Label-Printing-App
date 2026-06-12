@@ -109,6 +109,7 @@ PNG to verify output without wasting tape. Verify app compiles with `xcodebuild`
   content is a gray area).
 
 ## Open refinements / roadmap
+- **Folders/groups for Favorites** — let users organize saved labels into folders.
 - (Optional) ink-crop text left/right to remove side bearing at spacing 0.
 - Bundle an open-licensed symbol set; symbol categories/search.
 - iPhone/iPad app via the **Mac relay** (Bonjour) — reuses PTouchKit rendering.
