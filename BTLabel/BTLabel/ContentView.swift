@@ -129,17 +129,19 @@ struct EditorPanel: View {
                 Button { c.saveFavorite() } label: { Label("Save to Favorites", systemImage: "star") }
             }
             InteractivePreview()
-            HStack {
-                if let r = c.rendered {
-                    Text(String(format: "%d cells · %d raster lines · ~%.1f cm · drag to reorder, drag off to delete",
-                                c.cells.count, r.lengthDots, Double(r.lengthDots) * 0.149 / 10))
-                        .font(.caption).foregroundStyle(.secondary)
-                }
-                Spacer()
-                if c.cells.count > 1 {
-                    Stepper("Cell spacing: \(String(format: "%.1f", c.cellSpacingMM)) mm",
-                            value: $c.cellSpacingMM, in: 0...20, step: 0.5)
-                        .font(.caption).fixedSize()
+            if advanced {
+                HStack {
+                    if let r = c.rendered {
+                        Text(String(format: "%d cells · %d raster lines · ~%.1f cm · drag to reorder, drag off to delete",
+                                    c.cells.count, r.lengthDots, Double(r.lengthDots) * 0.149 / 10))
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
+                    Spacer()
+                    if c.cells.count > 1 {
+                        Stepper("Cell spacing: \(String(format: "%.1f", c.cellSpacingMM)) mm",
+                                value: $c.cellSpacingMM, in: 0...20, step: 0.5)
+                            .font(.caption).fixedSize()
+                    }
                 }
             }
 
