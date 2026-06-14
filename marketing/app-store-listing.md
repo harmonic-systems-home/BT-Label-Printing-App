@@ -9,6 +9,16 @@ Copy/paste into App Store Connect. Character limits noted. Revise freely.
 `Bluetooth tape label maker`
 <!-- alternates: "Design & print tape labels" (26) · "Label maker for P-touch" (23) -->
 
+## Support URL
+`https://btlabel.org/support.html`
+
+## Privacy Policy URL
+`https://btlabel.org/privacy.html`
+
+## Copyright
+`2026 Rick Wilson`
+<!-- shown as "© 2026 Rick Wilson". Alternatives: 2026 PopperBiz · 2026 Harmonic Systems -->
+
 ## Promotional Text (max 170, editable anytime without review)
 `Design and print labels from your Mac over Bluetooth — fonts, icons, images, substitution tokens, and iCloud sync across all your Macs. Free to try.`
 
