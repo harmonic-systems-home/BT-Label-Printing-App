@@ -459,10 +459,10 @@ struct SettingsSheet: View {
         VStack(alignment: .leading, spacing: 14) {
             Text("Contact").font(.headline)
             Form {
-                TextField("Name", text: $c.contactName)
-                TextField("Phone", text: $c.contactPhone)
-                TextField("Street", text: $c.contactStreet)
-                TextField("Email", text: $c.contactEmail)
+                PlainTextField(text: $c.contactName, placeholder: "Name")
+                PlainTextField(text: $c.contactPhone, placeholder: "Phone")
+                PlainTextField(text: $c.contactStreet, placeholder: "Street")
+                PlainTextField(text: $c.contactEmail, placeholder: "Email")
             }
             Text("Used by the /n /p /s /e text tokens. /d inserts today's date. These are saved between launches.")
                 .font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
@@ -661,6 +661,93 @@ struct LabelTextEditor: NSViewRepresentable {
                   (textView.string as NSString).substring(with: affectedCharRange) == " "
             else { return true }
             textView.insertText("  ", replacementRange: affectedCharRange)
+            return false
+        }
+    }
+}
+
+/// A single-line text field that, like `LabelTextEditor`, blocks the macOS
+/// double-space → ". " substitution (which SwiftUI's TextField re-enables via the
+/// shared field editor). Used for the contact fields in Settings.
+struct PlainTextField: View {
+    @Binding var text: String
+    var placeholder: String = ""
+
+    var body: some View {
+        PlainTextFieldRep(text: $text)
+            .frame(height: 22)
+            .padding(.horizontal, 6)
+            .background(RoundedRectangle(cornerRadius: 6).fill(Color(nsColor: .textBackgroundColor)))
+            .overlay(RoundedRectangle(cornerRadius: 6).stroke(.secondary.opacity(0.3)))
+            .overlay(alignment: .leading) {
+                if text.isEmpty {
+                    Text(placeholder).foregroundStyle(.secondary)
+                        .padding(.leading, 10).allowsHitTesting(false)
+                }
+            }
+    }
+}
+
+private struct PlainTextFieldRep: NSViewRepresentable {
+    @Binding var text: String
+
+    func makeNSView(context: Context) -> NSTextView {
+        let tv = NSTextView()
+        tv.delegate = context.coordinator
+        tv.isRichText = false
+        tv.font = .systemFont(ofSize: 13)
+        tv.string = text
+        tv.drawsBackground = false
+        tv.isVerticallyResizable = false
+        tv.textContainerInset = NSSize(width: 2, height: 3)
+        tv.textContainer?.maximumNumberOfLines = 1
+        tv.textContainer?.lineBreakMode = .byTruncatingTail
+        tv.textContainer?.widthTracksTextView = true
+        // Disable substitutions that rewrite literal contact text (the double-space
+        // period is hard-blocked in the coordinator below, which is the reliable fix).
+        tv.isAutomaticTextReplacementEnabled = false
+        tv.isAutomaticQuoteSubstitutionEnabled = false
+        tv.isAutomaticDashSubstitutionEnabled = false
+        tv.isAutomaticSpellingCorrectionEnabled = false
+        tv.isAutomaticDataDetectionEnabled = false
+        tv.isAutomaticLinkDetectionEnabled = false
+        tv.smartInsertDeleteEnabled = false
+        return tv
+    }
+
+    func updateNSView(_ tv: NSTextView, context: Context) {
+        context.coordinator.parent = self
+        if tv.string != text { tv.string = text }
+    }
+
+    func makeCoordinator() -> Coordinator { Coordinator(self) }
+
+    final class Coordinator: NSObject, NSTextViewDelegate {
+        var parent: PlainTextFieldRep
+        init(_ parent: PlainTextFieldRep) { self.parent = parent }
+
+        func textDidChange(_ notification: Notification) {
+            guard let tv = notification.object as? NSTextView else { return }
+            parent.text = tv.string
+        }
+
+        // Same hard-block as LabelTextEditor: keep two spaces instead of ". ".
+        func textView(_ textView: NSTextView, shouldChangeTextIn affectedCharRange: NSRange,
+                      replacementString: String?) -> Bool {
+            guard replacementString == ". ",
+                  affectedCharRange.length == 1,
+                  affectedCharRange.location < (textView.string as NSString).length,
+                  (textView.string as NSString).substring(with: affectedCharRange) == " "
+            else { return true }
+            textView.insertText("  ", replacementRange: affectedCharRange)
+            return false
+        }
+
+        // Enter/Tab should commit the field, not insert a newline into it.
+        func textView(_ textView: NSTextView, doCommandBy commandSelector: Selector) -> Bool {
+            if commandSelector == #selector(NSResponder.insertNewline(_:)) {
+                textView.window?.makeFirstResponder(nil); return true
+            }
             return false
         }
     }
