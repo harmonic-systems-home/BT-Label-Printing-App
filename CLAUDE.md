@@ -103,8 +103,11 @@ PNG to verify output without wasting tape. Verify app compiles with `xcodebuild`
   crashes). Sandbox has `network.client` (ENABLE_OUTGOING_NETWORK_CONNECTIONS=YES)
   so CloudKit can reach iCloud. Synced models: `SavedLabelModel` (favorites +
   history), `FavoriteFolder`, `AppSettings` (contact fields). Schema is in the
-  container's **Development** env; **not yet deployed to Production**. Cross-Mac
-  sync is set up but **not yet verified end-to-end**.
+  container's **Development** env and **deployed to Production**. Cross-Mac sync
+  is **verified end-to-end** via TestFlight (favorites, folders, and contact
+  fields live-update). Note: dev (Xcode) builds use the Development CloudKit env,
+  TestFlight/App Store builds use Production — they don't share data, so test
+  sync with TestFlight builds on all devices.
 - Favorites = SwiftData (`@Query`), thumbnails rendered live, tokens expanded.
   History auto-logs distinct printed labels (capped, promotable to favorites).
 - Contact fields are SwiftData (`AppSettings`, iCloud-synced); writes are
@@ -126,15 +129,15 @@ PNG to verify output without wasting tape. Verify app compiles with `xcodebuild`
 **Done:** Folders for Favorites (drag-and-drop, synced) · Bootstrap Icons (MIT)
 with filter · app icon · dedicated CloudKit container + sandbox network entitlement
 · Basic/Advanced UI · `/d1`–`/d5` date tokens + token boundary fix · debounced
-contact saves.
+contact saves · **CloudKit schema deployed to Production + cross-Mac sync verified
+via TestFlight** (incl. live contact-field refresh) · `LSApplicationCategoryType`
+(Productivity) + `ITSAppUsesNonExemptEncryption=NO` for App Store upload.
 
 **Ship-blocking (App Store prep):**
-- **Verify CloudKit sync** end-to-end across multiple Macs (set up, unproven).
-- **Deploy CloudKit schema to Production** (incl. `AppSettings`, `FavoriteFolder`,
-  and the added `SavedLabelModel` fields).
 - **App Store Connect:** create IAP `com.popperbiz.BTLabel.unlock` ($14.99) +
   generate promo codes.
 - **Final brand name** decision.
+- App Store listing assets: screenshots, description, privacy details.
 
 **Nice-to-have / future:**
 - iPhone/iPad app via the **Mac relay** (Bonjour) — reuses PTouchKit rendering.
