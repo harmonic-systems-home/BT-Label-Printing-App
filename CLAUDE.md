@@ -98,23 +98,51 @@ PNG to verify output without wasting tape. Verify app compiles with `xcodebuild`
   with optional 2-row black **cut line**.
 
 ## App conventions / state
-- **CloudKit:** the model is CloudKit-ready; the user enabled the CloudKit
-  capability but the **container id is empty** — sync needs a container
-  (`iCloud.<bundle-id>`) added in Xcode. `makeContainer()` falls back to local so
-  it never crashes.
+- **CloudKit:** wired to a dedicated container **`iCloud.com.popperbiz.BTLabel`**
+  (`makeContainer()` uses `.automatic`, falling back to local-only so it never
+  crashes). Sandbox has `network.client` (ENABLE_OUTGOING_NETWORK_CONNECTIONS=YES)
+  so CloudKit can reach iCloud. Synced models: `SavedLabelModel` (favorites +
+  history), `FavoriteFolder`, `AppSettings` (contact fields). Schema is in the
+  container's **Development** env; **not yet deployed to Production**. Cross-Mac
+  sync is set up but **not yet verified end-to-end**.
 - Favorites = SwiftData (`@Query`), thumbnails rendered live, tokens expanded.
-- Contact fields persist in UserDefaults; copies/numbering are per-session.
-- Symbols use **SF Symbols** as a prototype — **replace with a bundled MIT/Apache
-  set (Material/Bootstrap) before release** (SF Symbols licensing for printed
-  content is a gray area).
+  History auto-logs distinct printed labels (capped, promotable to favorites).
+- Contact fields are SwiftData (`AppSettings`, iCloud-synced); writes are
+  **debounced ~700ms** and flushed when the Settings sheet closes (avoids a
+  CloudKit export per keystroke). Copies/numbering are per-session.
+- **Basic/Advanced UI:** `@AppStorage("advancedUI")` (default off) gates the
+  add-cell buttons, per-cell controls row, and preview status row. Basic keeps
+  preview + text box + collapsed Print Settings; the text box stays so /n /e
+  tokens remain visible/editable.
+- **Symbols:** Bootstrap Icons (MIT), pre-rasterized to PNGs in
+  `Sources/PTouchKit/Resources/icons/`, with a text filter. (Categories/search
+  beyond the filter are still open.)
+- **Tokens:** a token applies only at a boundary (space/punctuation/EOL), not when
+  followed by a letter or digit. Date variants `/d` (medium) and `/d1`–`/d5`.
+- **App icon:** generated from `Icon/Icon Master.png` into `AppIcon.appiconset`
+  (macOS 16–512 @1x/2x + 1024; the 1024 is alpha-free for App Store validation).
 
 ## Open refinements / roadmap
-- **Folders/groups for Favorites** — let users organize saved labels into folders.
-- (Optional) ink-crop text left/right to remove side bearing at spacing 0.
-- Bundle an open-licensed symbol set; symbol categories/search.
+**Done:** Folders for Favorites (drag-and-drop, synced) · Bootstrap Icons (MIT)
+with filter · app icon · dedicated CloudKit container + sandbox network entitlement
+· Basic/Advanced UI · `/d1`–`/d5` date tokens + token boundary fix · debounced
+contact saves.
+
+**Ship-blocking (App Store prep):**
+- **Verify CloudKit sync** end-to-end across multiple Macs (set up, unproven).
+- **Deploy CloudKit schema to Production** (incl. `AppSettings`, `FavoriteFolder`,
+  and the added `SavedLabelModel` fields).
+- **App Store Connect:** create IAP `com.popperbiz.BTLabel.unlock` ($14.99) +
+  generate promo codes.
+- **Final brand name** decision.
+
+**Nice-to-have / future:**
 - iPhone/iPad app via the **Mac relay** (Bonjour) — reuses PTouchKit rendering.
 - Tape sizes other than 12 mm (status already carries width).
-- App Store prep: finish CloudKit container, app icon, brand name, sandbox is on.
+- Symbol **categories** (text filter exists; categories don't).
+- *(Optional)* ink-crop text left/right to remove side bearing at spacing 0.
+- *(Optional)* flush contact edits on app termination (force-quit-with-sheet-open
+  edge case).
 
 ## Commit style
 Conventional, imperative subject; end body with:
