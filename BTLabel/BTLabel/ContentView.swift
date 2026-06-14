@@ -743,12 +743,19 @@ private struct PlainTextFieldRep: NSViewRepresentable {
             return false
         }
 
-        // Enter/Tab should commit the field, not insert a newline into it.
+        // Behave like a normal field: Enter commits, Tab/Shift-Tab move focus
+        // instead of inserting a newline or tab character.
         func textView(_ textView: NSTextView, doCommandBy commandSelector: Selector) -> Bool {
-            if commandSelector == #selector(NSResponder.insertNewline(_:)) {
+            switch commandSelector {
+            case #selector(NSResponder.insertNewline(_:)):
                 textView.window?.makeFirstResponder(nil); return true
+            case #selector(NSResponder.insertTab(_:)):
+                textView.window?.selectNextKeyView(nil); return true
+            case #selector(NSResponder.insertBacktab(_:)):
+                textView.window?.selectPreviousKeyView(nil); return true
+            default:
+                return false
             }
-            return false
         }
     }
 }
