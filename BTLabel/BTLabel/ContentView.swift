@@ -423,7 +423,10 @@ struct PrintOptionsView: View {
                         Toggle("Cut line between labels", isOn: $c.cutLine)
                     }
                     Text("Text tokens: /i index · /c count · /n name · /p phone · /s street · /e email · /d date. Saved labels keep the tokens; the preview shows the expansions.")
-                        .font(.caption2).foregroundStyle(.secondary)
+                        .font(.callout).foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Text("Enter your name, phone, street, and email in Settings (gear icon) — those values fill the /n /p /s /e tokens.")
+                        .font(.callout).foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }.padding(.top, 6)
             }.padding(6)
@@ -446,7 +449,7 @@ struct SettingsSheet: View {
                 TextField("Email", text: $c.contactEmail)
             }
             Text("Used by the /n /p /s /e text tokens. /d inserts today's date. These are saved between launches.")
-                .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                .font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
 
             Divider()
             Text("License").font(.headline)
@@ -527,8 +530,8 @@ struct CellEditorView: View {
         VStack(alignment: .leading, spacing: 10) {
             LabelTextEditor(text: $cell.text, focusToken: c.focusTextToken).frame(height: 60)
                 .overlay(RoundedRectangle(cornerRadius: 4).stroke(.secondary.opacity(0.3)))
-            Text("Return adds a line. Tokens like /i /c /n /d are allowed (see Print options).")
-                .font(.caption2).foregroundStyle(.secondary)
+            Text("Return adds a line. Tokens like /i /c /n /d are allowed (see Print Settings).")
+                .font(.callout).foregroundStyle(.secondary)
         }
     }
 
