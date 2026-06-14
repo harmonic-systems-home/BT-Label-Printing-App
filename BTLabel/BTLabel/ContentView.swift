@@ -44,6 +44,7 @@ struct ContentView: View {
 struct PrinterStatusBar: View {
     @EnvironmentObject private var c: PrinterController
     @EnvironmentObject private var store: StoreManager
+    @AppStorage("advancedUI") private var advanced = false
     @State private var showPurchase = false
     private var canPrint: Bool { store.isUnlocked || c.freePrintsLeft > 0 }
     var body: some View {
@@ -65,6 +66,9 @@ struct PrinterStatusBar: View {
                 }.font(.callout)
             }
             Spacer()
+            Toggle("Advanced", isOn: $advanced)
+                .toggleStyle(.checkbox)
+                .help("Show cell management and per-cell formatting controls")
             if !store.isUnlocked && c.freePrintsLeft > 0 {
                 Button { showPurchase = true } label: {
                     Text("\(c.freePrintsLeft) free prints left").font(.caption)
@@ -104,21 +108,24 @@ struct PrinterStatusBar: View {
 
 struct EditorPanel: View {
     @EnvironmentObject private var c: PrinterController
+    @AppStorage("advancedUI") private var advanced = false
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             HStack {
                 Button { c.newLabel() } label: { Label("New", systemImage: "doc.badge.plus") }
                 TapeMenu()
                 Spacer()
-                HStack(spacing: 8) {
-                    Button { c.addCell(.text) } label: { Label("Aa", systemImage: "plus") }
-                    Button { c.addCell(.symbol) } label: { Label("Symbol", systemImage: "plus") }
-                    Button { c.addCell(.image) } label: { Label("Image", systemImage: "plus") }
-                    Button { c.pasteImage() } label: { Label("Paste", systemImage: "doc.on.clipboard") }
-                        .keyboardShortcut("v", modifiers: [.command, .shift])
-                        .help("Paste an image from the clipboard as a new cell (⇧⌘V)")
+                if advanced {
+                    HStack(spacing: 8) {
+                        Button { c.addCell(.text) } label: { Label("Aa", systemImage: "plus") }
+                        Button { c.addCell(.symbol) } label: { Label("Symbol", systemImage: "plus") }
+                        Button { c.addCell(.image) } label: { Label("Image", systemImage: "plus") }
+                        Button { c.pasteImage() } label: { Label("Paste", systemImage: "doc.on.clipboard") }
+                            .keyboardShortcut("v", modifiers: [.command, .shift])
+                            .help("Paste an image from the clipboard as a new cell (⇧⌘V)")
+                    }
+                    Spacer()
                 }
-                Spacer()
                 Button { c.saveFavorite() } label: { Label("Save to Favorites", systemImage: "star") }
             }
             InteractivePreview()
@@ -464,11 +471,13 @@ struct SettingsSheet: View {
 
 struct CellEditorView: View {
     @EnvironmentObject private var c: PrinterController
+    @AppStorage("advancedUI") private var advanced = false
     @Binding var cell: LabelCell
 
     var body: some View {
         GroupBox {
             VStack(alignment: .leading, spacing: 12) {
+                if advanced {
                 HStack(spacing: 14) {
                     Picker("Type", selection: $cell.kind) {
                         Text("Text").tag(LabelCell.Kind.text)
@@ -497,6 +506,7 @@ struct CellEditorView: View {
                     }
                     .disabled(c.cells.count <= 1)
                     .help("Remove this cell from the label")
+                }
                 }
                 switch cell.kind {
                 case .text: textControls
