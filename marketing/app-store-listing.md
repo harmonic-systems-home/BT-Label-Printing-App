@@ -20,10 +20,10 @@ Copy/paste into App Store Connect. Character limits noted. Revise freely.
 <!-- shown as "© 2026 Rick Wilson". Alternatives: 2026 PopperBiz · 2026 Harmonic Systems -->
 
 ## Promotional Text (max 170, editable anytime without review)
-`Design and print labels from your Mac over Bluetooth — fonts, icons, images, substitution tokens, and iCloud sync across all your Macs. Free to try.`
+`Works only with the Brother PT-P300BT label printer. Design and print labels from your Mac over Bluetooth — fonts, icons, images, tokens, and iCloud sync. Free to try.`
 
 ## Keywords (max 100 chars total, comma-separated, no spaces)
-`label maker,labels,labeling,tape,ptouch,p-touch,brother,bluetooth,printer,sticker,name tag,address`
+`label maker,labels,labeling,tape,ptouch,p-touch,pt-p300bt,brother,bluetooth,printer,sticker`
 
 > ⚠️ Trademark note: `brother`, `ptouch`, `p-touch` are third-party trademarks.
 > Including them as keywords can occasionally draw an App Review flag (guideline
