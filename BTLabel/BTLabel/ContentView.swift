@@ -472,6 +472,7 @@ struct SettingsSheet: View {
         }
         .padding(20).frame(width: 380)
         .sheet(isPresented: $showPurchase) { PurchaseView().environmentObject(store).environmentObject(c) }
+        .onDisappear { c.flushContact() }
     }
 }
 

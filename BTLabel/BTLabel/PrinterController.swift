@@ -574,8 +574,27 @@ final class PrinterController: ObservableObject {
         isLoadingSettings = false
     }
 
+    private var contactSaveTask: Task<Void, Never>?
+
+    /// Coalesce rapid edits (one per keystroke) into a single persist+sync after a
+    /// short pause, so typing a phone number doesn't kick off a CloudKit export per
+    /// character. `flushContact()` commits immediately (e.g. when the sheet closes).
     private func saveContact() {
-        guard !isLoadingSettings, let ctx = modelContext, let s = settings else { return }
+        guard !isLoadingSettings, modelContext != nil, settings != nil else { return }
+        contactSaveTask?.cancel()
+        contactSaveTask = Task { [weak self] in
+            try? await Task.sleep(for: .milliseconds(700))
+            guard !Task.isCancelled else { return }
+            self?.flushContact()
+        }
+    }
+
+    /// Persist any pending contact edits right now (cancels the debounce timer).
+    func flushContact() {
+        contactSaveTask?.cancel(); contactSaveTask = nil
+        guard let ctx = modelContext, let s = settings else { return }
+        guard s.contactName != contactName || s.contactPhone != contactPhone
+            || s.contactStreet != contactStreet || s.contactEmail != contactEmail else { return }
         s.contactName = contactName; s.contactPhone = contactPhone
         s.contactStreet = contactStreet; s.contactEmail = contactEmail
         s.updatedAt = Date()
