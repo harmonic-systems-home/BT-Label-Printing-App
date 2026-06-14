@@ -672,9 +672,15 @@ struct LabelTextEditor: NSViewRepresentable {
 struct PlainTextField: View {
     @Binding var text: String
     var placeholder: String = ""
+    /// Bump to move focus to this field and select all its text (e.g. on a rename
+    /// sheet appearing). Left at 0 for fields that shouldn't auto-focus.
+    var focusToken: Int = 0
+    /// Called when the user presses Return; if set, Return commits instead of
+    /// just resigning focus.
+    var onSubmit: (() -> Void)? = nil
 
     var body: some View {
-        PlainTextFieldRep(text: $text)
+        PlainTextFieldRep(text: $text, focusToken: focusToken, onSubmit: onSubmit)
             .frame(height: 22)
             .padding(.horizontal, 6)
             .background(RoundedRectangle(cornerRadius: 6).fill(Color(nsColor: .textBackgroundColor)))
@@ -690,10 +696,13 @@ struct PlainTextField: View {
 
 private struct PlainTextFieldRep: NSViewRepresentable {
     @Binding var text: String
+    var focusToken: Int = 0
+    var onSubmit: (() -> Void)? = nil
 
     func makeNSView(context: Context) -> NSTextView {
         let tv = NSTextView()
         tv.delegate = context.coordinator
+        context.coordinator.lastFocusToken = focusToken   // don't focus on first build
         tv.isRichText = false
         tv.font = .systemFont(ofSize: 13)
         tv.string = text
@@ -718,12 +727,21 @@ private struct PlainTextFieldRep: NSViewRepresentable {
     func updateNSView(_ tv: NSTextView, context: Context) {
         context.coordinator.parent = self
         if tv.string != text { tv.string = text }
+        if focusToken != context.coordinator.lastFocusToken {
+            context.coordinator.lastFocusToken = focusToken
+            DispatchQueue.main.async {
+                guard let window = tv.window else { return }
+                window.makeFirstResponder(tv)
+                tv.selectAll(nil)
+            }
+        }
     }
 
     func makeCoordinator() -> Coordinator { Coordinator(self) }
 
     final class Coordinator: NSObject, NSTextViewDelegate {
         var parent: PlainTextFieldRep
+        var lastFocusToken = 0
         init(_ parent: PlainTextFieldRep) { self.parent = parent }
 
         func textDidChange(_ notification: Notification) {
@@ -748,7 +766,9 @@ private struct PlainTextFieldRep: NSViewRepresentable {
         func textView(_ textView: NSTextView, doCommandBy commandSelector: Selector) -> Bool {
             switch commandSelector {
             case #selector(NSResponder.insertNewline(_:)):
-                textView.window?.makeFirstResponder(nil); return true
+                if let onSubmit = parent.onSubmit { onSubmit() }
+                else { textView.window?.makeFirstResponder(nil) }
+                return true
             case #selector(NSResponder.insertTab(_:)):
                 textView.window?.selectNextKeyView(nil); return true
             case #selector(NSResponder.insertBacktab(_:)):
@@ -826,6 +846,7 @@ struct FavoritesSidebar: View {
     @State private var tab = 0   // 0 = Favorites, 1 = History
     @State private var renamingFolder: FavoriteFolder?
     @State private var renameText = ""
+    @State private var renameFocus = 0
     @Query(filter: #Predicate<SavedLabelModel> { $0.kind == "favorite" },
            sort: \SavedLabelModel.createdAt, order: .reverse) private var favorites: [SavedLabelModel]
     @Query(filter: #Predicate<SavedLabelModel> { $0.kind == "history" },
@@ -934,12 +955,29 @@ struct FavoritesSidebar: View {
             }
         }
         .frame(minWidth: 180)
-        .alert("Rename Folder", isPresented: Binding(get: { renamingFolder != nil },
-                                                     set: { if !$0 { renamingFolder = nil } })) {
-            TextField("Name", text: $renameText)
-            Button("Rename") { if let f = renamingFolder { c.renameFolder(f, renameText) }; renamingFolder = nil }
-            Button("Cancel", role: .cancel) { renamingFolder = nil }
+        .sheet(isPresented: Binding(get: { renamingFolder != nil },
+                                    set: { if !$0 { renamingFolder = nil } })) {
+            VStack(alignment: .leading, spacing: 14) {
+                Text("Rename Folder").font(.headline)
+                // NSTextView-backed field: prefills reliably (the SwiftUI alert
+                // TextField did not) and focuses + selects all on appear.
+                PlainTextField(text: $renameText, placeholder: "Name",
+                               focusToken: renameFocus, onSubmit: commitRename)
+                    .frame(width: 260)
+                HStack {
+                    Spacer()
+                    Button("Cancel") { renamingFolder = nil }.keyboardShortcut(.cancelAction)
+                    Button("Rename", action: commitRename).keyboardShortcut(.defaultAction)
+                }
+            }
+            .padding(20).frame(width: 300)
+            .onAppear { renameFocus += 1 }
         }
+    }
+
+    private func commitRename() {
+        if let f = renamingFolder { c.renameFolder(f, renameText) }
+        renamingFolder = nil
     }
 
     private func promptRename(_ folder: FavoriteFolder?) {
