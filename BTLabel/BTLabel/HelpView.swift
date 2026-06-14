@@ -75,18 +75,26 @@ private enum HelpContent {
              + "printer, connected over Bluetooth. It is an independent product, not "
              + "affiliated with Brother, and does not work with other printers. Tape is "
              + "12 mm.")
-        sub("First-time setup")
-        step(1, "Power on the PT-P300 and load 12 mm tape.")
-        step(2, "Open the **Bluetooth** menu in the macOS menu bar (or System Settings → "
-                + "Bluetooth) and connect to the **PT-P300**.")
-        step(3, "If macOS says you need to configure a printer (or opens Printers & "
+        sub("One-time setup")
+        step(1, "Open the **Bluetooth** menu in the macOS menu bar (or System Settings → "
+                + "Bluetooth) and connect to the **PT-P300**. You only do this once.")
+        step(2, "If macOS says you need to configure a printer (or opens Printers & "
                 + "Scanners), click **Cancel**. BTLabel talks to the printer directly — "
                 + "you do **not** add it as a system printer.")
-        step(4, "Back in BTLabel, make sure the printer name matches, then click the "
-                + "**Status** refresh button next to the name. When connected, you'll "
-                + "see the loaded tape's width and color.")
-        body("If Status can't connect, re-check the Bluetooth connection in the menu "
-             + "bar and try again.")
+
+        sub("Each time you print")
+        step(1, "Power on the printer and make sure 12 mm tape is loaded.")
+        step(2, "Click the **Status** refresh button next to the printer name to confirm "
+                + "the connection. When connected, you'll see the loaded tape's width and "
+                + "color.")
+        body("After the one-time pairing you don't need the Bluetooth menu again — just "
+             + "power on and print. If Status can't connect, re-check the connection in "
+             + "the Bluetooth menu.")
+
+        sub("Designing without a printer")
+        body("You can create and edit labels, save favorites, and preview exactly what "
+             + "will print at any time — the printer doesn't need to be on or connected. "
+             + "You only need it powered on and connected when you actually print.")
     }
 
     @ViewBuilder static var cellEditing: some View {
