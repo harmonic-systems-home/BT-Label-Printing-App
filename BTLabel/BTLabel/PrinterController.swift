@@ -559,15 +559,33 @@ final class PrinterController: ObservableObject {
         guard let ctx = modelContext else { return }
         let all = (try? ctx.fetch(FetchDescriptor<AppSettings>(
             sortBy: [SortDescriptor(\.updatedAt, order: .reverse)]))) ?? []
+        adoptSettings(all)
+    }
+
+    /// Adopt the current settings: converge on a single record and refresh the
+    /// in-memory contact fields. Called at launch and whenever SwiftData reports a
+    /// change — including an **incoming iCloud sync** — so a phone number edited on
+    /// another Mac shows up here live (the favorites sidebar already updates via
+    /// @Query; the contact fields piggyback on the same mechanism). Never clobbers
+    /// an edit in progress, and the newest `updatedAt` wins across devices.
+    func adoptSettings(_ all: [AppSettings]) {
+        guard let ctx = modelContext else { return }
+        let sorted = all.sorted { $0.updatedAt > $1.updatedAt }
         // If sync produced more than one settings row, keep the newest and prune.
-        if all.count > 1 {
-            for extra in all.dropFirst() { ctx.delete(extra) }
+        if sorted.count > 1 {
+            for extra in sorted.dropFirst() { ctx.delete(extra) }
             try? ctx.save()
         }
-        let s = all.first ?? {
+        let s = sorted.first ?? {
             let new = AppSettings(); ctx.insert(new); return new
         }()
         settings = s
+        // Don't overwrite fields mid-edit (a debounced save is pending); the local
+        // edit wins and flushes shortly. Otherwise pull in the (possibly remote)
+        // values when they actually differ.
+        guard contactSaveTask == nil else { return }
+        guard contactName != s.contactName || contactPhone != s.contactPhone
+            || contactStreet != s.contactStreet || contactEmail != s.contactEmail else { return }
         isLoadingSettings = true
         contactName = s.contactName; contactPhone = s.contactPhone
         contactStreet = s.contactStreet; contactEmail = s.contactEmail

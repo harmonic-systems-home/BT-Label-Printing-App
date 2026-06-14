@@ -13,6 +13,9 @@ struct ContentView: View {
     @EnvironmentObject private var c: PrinterController
     @EnvironmentObject private var store: StoreManager
     @Environment(\.modelContext) private var modelContext
+    // Observe AppSettings live so an incoming iCloud sync (e.g. a phone number
+    // changed on another Mac) refreshes the contact fields, not just on relaunch.
+    @Query(sort: \AppSettings.updatedAt, order: .reverse) private var allSettings: [AppSettings]
     @State private var showSettings = false
     @State private var didInitialFocus = false
 
@@ -35,6 +38,11 @@ struct ContentView: View {
             c.modelContext = modelContext
             // Focus + select the default label text so the user can just start typing.
             if !didInitialFocus { didInitialFocus = true; c.focusTextToken += 1 }
+        }
+        // SwiftData refreshes this @Query on local and remote (iCloud) changes;
+        // fold the newest settings into the controller's contact fields.
+        .onChange(of: allSettings.map(\.updatedAt)) { _, _ in
+            c.adoptSettings(allSettings)
         }
     }
 }
