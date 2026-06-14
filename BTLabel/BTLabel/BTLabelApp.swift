@@ -30,6 +30,12 @@ struct BTLabelApp: App {
         }
         .defaultSize(width: 820, height: 560)
         .modelContainer(container)
+        .commands {
+            CommandGroup(replacing: .help) {
+                Button("BTLabel Help") { controller.showHelp = true }
+                    .keyboardShortcut("?", modifiers: .command)
+            }
+        }
     }
 
     /// Prefer a CloudKit-synced store; fall back to a local-only store if iCloud

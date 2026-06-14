@@ -35,6 +35,8 @@ final class PrinterController: ObservableObject {
     /// Bumped to ask the text editor to take focus and select all its text (e.g. at
     /// launch, so the user can immediately type over the default label text).
     @Published var focusTextToken = 0
+    /// Toggled to present the Help window (from the `?` toolbar button or Help menu).
+    @Published var showHelp = false
 
     // The tape this label is designed for (Brother colour codes); drives the
     // tinted preview and the print-time mismatch warning. Default: black on white.

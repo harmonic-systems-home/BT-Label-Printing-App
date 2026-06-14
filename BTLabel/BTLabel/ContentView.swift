@@ -31,9 +31,14 @@ struct ContentView: View {
             .navigationTitle("BTLabel")
             .toolbar {
                 ToolbarItem { Button { showSettings = true } label: { Image(systemName: "gearshape") } }
+                ToolbarItem {
+                    Button { c.showHelp = true } label: { Image(systemName: "questionmark.circle") }
+                        .help("BTLabel Help")
+                }
             }
         }
         .sheet(isPresented: $showSettings) { SettingsSheet().environmentObject(c).environmentObject(store) }
+        .sheet(isPresented: $c.showHelp) { HelpView() }
         .onAppear {
             c.modelContext = modelContext
             // Focus + select the default label text so the user can just start typing.
