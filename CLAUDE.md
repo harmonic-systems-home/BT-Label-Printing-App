@@ -133,10 +133,11 @@ contact saves · **CloudKit schema deployed to Production + cross-Mac sync verif
 via TestFlight** (incl. live contact-field refresh) · `LSApplicationCategoryType`
 (Productivity) + `ITSAppUsesNonExemptEncryption=NO` for App Store upload.
 
+**Brand name:** **BTLabel** (final).
+
 **Ship-blocking (App Store prep):**
 - **App Store Connect:** create IAP `com.popperbiz.BTLabel.unlock` ($14.99) +
   generate promo codes.
-- **Final brand name** decision.
 - App Store listing assets: screenshots, description, privacy details.
 
 **Nice-to-have / future:**

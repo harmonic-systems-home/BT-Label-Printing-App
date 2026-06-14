@@ -34,12 +34,13 @@ struct HelpView: View {
 }
 
 enum HelpTopic: String, CaseIterable {
-    case gettingStarted, cellEditing, tokens, cloud
+    case gettingStarted, cellEditing, formatting, tokens, cloud
 
     var title: String {
         switch self {
         case .gettingStarted: return "Getting Started"
         case .cellEditing:    return "Cell Editing"
+        case .formatting:     return "Formatting"
         case .tokens:         return "Substitution Tokens"
         case .cloud:          return "iCloud Sharing"
         }
@@ -49,6 +50,7 @@ enum HelpTopic: String, CaseIterable {
         switch self {
         case .gettingStarted: return "printer"
         case .cellEditing:    return "square.on.square"
+        case .formatting:     return "textformat"
         case .tokens:         return "number"
         case .cloud:          return "icloud"
         }
@@ -58,6 +60,7 @@ enum HelpTopic: String, CaseIterable {
         switch self {
         case .gettingStarted: HelpContent.gettingStarted
         case .cellEditing:    HelpContent.cellEditing
+        case .formatting:     HelpContent.formatting
         case .tokens:         HelpContent.tokens
         case .cloud:          HelpContent.cloud
         }
@@ -104,6 +107,29 @@ private enum HelpContent {
         bullet("**Right-click** a cell for Copy or Delete.")
         bullet("**Cell spacing** sets the gap between cells.")
         bullet("For photos, open **Adjust Image** for brightness, contrast, and dithering.")
+    }
+
+    @ViewBuilder static var formatting: some View {
+        head("Formatting")
+        body("Formatting applies per text cell. Turn on **Advanced** (top bar), select "
+             + "a cell in the preview, and adjust its **Style** and **Size** in the "
+             + "panel below.")
+        sub("Style: Normal vs Inverted")
+        bullet("**Normal** — text prints in the text color on the tape (for example, "
+               + "black letters on white tape).")
+        bullet("**Inverted** — the letters are reversed out of a solid block of ink: a "
+               + "filled rectangle with the tape color showing through the text. Good "
+               + "for headers, warnings, or making a section stand out.")
+        sub("Size: Fit Text vs Consistent")
+        bullet("**Fit Text** (default) — scales the cell to the largest size that fills "
+               + "the tape height for *those exact letters*. Maximizes size, but a word "
+               + "like “no” can look larger than “Jiffy” because it has no tall or "
+               + "descending strokes.")
+        bullet("**Consistent** — sizes by cap height instead of the specific letters, so "
+               + "text is the same visual size across cells and across a batch of labels, "
+               + "no matter which letters are used.")
+        body("Tip: for a single bold word, **Fit Text** prints biggest. When you want "
+             + "multiple cells — or a run of labels — to match, choose **Consistent**.")
     }
 
     @ViewBuilder static var tokens: some View {
