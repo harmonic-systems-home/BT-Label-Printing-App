@@ -93,14 +93,9 @@ final class PrinterController: ObservableObject {
     var effectiveCount: Int { totalCount > 0 ? totalCount : (startIndex + max(1, copies) - 1) }
     var cellSpacingDots: Int { max(0, Int((cellSpacingMM / 0.149).rounded())) }
 
-    private var todayString: String {
-        let df = DateFormatter(); df.dateStyle = .medium; df.timeStyle = .none
-        return df.string(from: Date())
-    }
-
     func context(index: Int) -> TokenContext {
         TokenContext(index: index, count: effectiveCount, name: contactName, phone: contactPhone,
-                     street: contactStreet, email: contactEmail, date: todayString)
+                     street: contactStreet, email: contactEmail, date: Date())
     }
 
     /// Cells with text tokens expanded for the given label index.
