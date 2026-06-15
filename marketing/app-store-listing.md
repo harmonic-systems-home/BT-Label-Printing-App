@@ -75,11 +75,26 @@ BTLabel is an independent product and is not affiliated with, or endorsed by, Br
 **Description (max 45):** `Unlock unlimited label printing.`
 
 ## App Review notes (paste into "Notes" on the version)
-BTLabel prints to the Brother P-touch PT-P300BT, a Bluetooth label printer. The
-app's core function (printing) requires this physical device, which the review
-team will not have. All design features can be exercised without hardware:
-create text/symbol/image cells, preview the exact label, save favorites, and use
-substitution tokens. The Print button renders the label and sends it to the
-paired printer over Bluetooth. A demo video of designing and printing is attached
-[attach a short screen recording]. The in-app purchase unlocks unlimited printing
-(free trial allows 5 prints).
+BTLabel works with the Brother P-touch PT-P300BT, a Bluetooth label printer. The
+reviewer can fully evaluate the entire app WITHOUT the printer — only the final
+"Print" action requires the hardware.
+
+With no printer connected, you can test:
+- Creating and editing labels: text, symbols (built-in icon set), and images
+  (including paste from the clipboard and SVG/PDF import)
+- Per-cell formatting: fonts, Normal/Inverted styles, sizing, and tape colors
+- The live preview of exactly what would print
+- Saving to Favorites and organizing them into folders
+- Print history
+- iCloud sync of favorites, folders, history, and Settings (contact fields)
+  across Macs signed in to the same Apple ID
+- Substitution tokens (/i /c /n /p /s /e /d), shown live in the preview
+
+The ONLY hardware-dependent feature is sending a finished label to the PT-P300BT
+over Bluetooth. A short screen recording focused on that print step is attached.
+
+No account or login is required.
+
+In-app purchase: "BTLabel — Full Version" (com.popperbiz.BTLabel.unlock) unlocks
+unlimited printing after a 5-print free trial; it can be tested in the StoreKit
+sandbox at no charge.
