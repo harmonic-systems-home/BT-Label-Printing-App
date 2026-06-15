@@ -148,12 +148,12 @@ Collected; demo video for the print step.
 - Generate **IAP promo codes** (only available after approval).
 - Update the App Store link on btlabel.org's landing page once live.
 
-**Known issues to investigate:**
-- **Bluetooth reconnection robustness:** after the printer is power-cycled or
-  unplugged/replugged, the first print attempt(s) can fail; a few retries recover
-  it. Needs dedicated connect/reconnect testing and likely a transport-level retry
-  / stale-channel reset in `RFCOMMTransport`/`BluetoothRunner` before this is
-  smooth. (Reported 2026-06-14.)
+**Recently fixed:**
+- **Bluetooth reconnection after power-cycle** (was: first connect failed with
+  IOReturn `0xe00002bc`, needed manual retries). `RFCOMMTransport.connect` now
+  wakes the baseband link (`device.openConnection()`) before opening RFCOMM,
+  refreshes the SDP query on retries, and retries until the timeout (app uses 25s).
+  Verified with `ptsmoke` connecting on the first try right after a power-cycle.
 
 **Nice-to-have / future:**
 - iPhone/iPad app via the **Mac relay** (Bonjour) — reuses PTouchKit rendering.
