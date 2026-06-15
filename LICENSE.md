@@ -1,4 +1,4 @@
-Required Notice: Copyright © 2026 Rick Wilson — https://github.com/Rick-Wilson
+Required Notice: Copyright © 2026 Rick Wilson — https://btlabel.org
 
 # PolyForm Perimeter License 1.0.0
 

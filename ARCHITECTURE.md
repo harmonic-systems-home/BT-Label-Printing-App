@@ -1,8 +1,13 @@
 # Architecture
 
-A SwiftUI **multiplatform** app (macOS, iPadOS, iOS) sharing one codebase and one
-iCloud data store. The design is layered so the platform‑specific part — the
-Bluetooth transport — is the only thing that differs per OS.
+> **Status (2026‑06):** the **macOS** app is built and **submitted to the App
+> Store** (v1.0). iOS/iPadOS remain blocked at the transport layer (see below); the
+> non‑transport layers are kept cross‑platform so a future Mac‑relay iOS app can
+> reuse them.
+
+A SwiftUI app sharing a layered codebase and one iCloud data store. The design is
+layered so the platform‑specific part — the Bluetooth transport — is the only
+thing that differs per OS.
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
@@ -119,14 +124,17 @@ to the protocol layer — preview and print are guaranteed identical.
 
 ## 4. Data + iCloud sync (shared)
 
-- **SwiftData** models with **CloudKit** sync (`ModelConfiguration` backed by the
-  app's iCloud container) so it works with zero custom sync code:
-  - `LabelDesign` — text, font, options, optional merged image, thumbnail.
-  - `Favorite` — a pinned design for one‑tap reprint.
-  - `AppSettings` — defaults (printer name, threshold, gap…).
-- Tiny key/value prefs can use `NSUbiquitousKeyValueStore`.
-- Requires the **iCloud (CloudKit)** capability and an iCloud container; gate
-  sync behind the user being signed into iCloud, with a local‑only fallback.
+- **SwiftData** models with **CloudKit** sync (`ModelConfiguration(cloudKitDatabase:
+  .automatic)`, container `iCloud.com.popperbiz.BTLabel`) so it works with zero
+  custom sync code. As built:
+  - `SavedLabelModel` — a label as `favorite` or `history`; cells stored as JSON in
+    `cellsData`, plus `cellSpacingMM`, `tapeColor`/`textColor`, `folderID`, `sortIndex`.
+  - `FavoriteFolder` — nestable folder (name, parentID, colorIndex, expanded, sortIndex).
+  - `AppSettings` — contact fields (name/phone/street/email) for the tokens.
+- Per‑device prefs (last tape color, free‑print count) stay local in `UserDefaults`.
+- Requires the **iCloud (CloudKit)** capability + the sandbox `network.client`
+  entitlement; `makeContainer()` falls back to a local store if iCloud isn't
+  configured, so the app never crashes. Schema is deployed to **Production**.
 
 ## 5. UI layer (SwiftUI, adaptive)
 
@@ -137,27 +145,38 @@ to the protocol layer — preview and print are guaranteed identical.
 - **Printer bar** — connection state + **installed tape color/width** from status.
 - **Favorites** — saved designs, reprint, edit, sync via iCloud.
 
-## Targets / project layout (planned)
+## Targets / project layout (as built)
 
 ```
 BT-Label-Printing-App/
-├─ Shared/            # protocol, rendering, data models, UI
-├─ Transport/
-│  ├─ RFCOMMTransport.swift   # macOS (IOBluetooth)
-│  └─ BLETransport.swift      # iOS/iPadOS (CoreBluetooth)
-├─ App/               # @main, scenes, platform entry points
-└─ BT-Label-Printing-App.xcodeproj
+├─ Package.swift                 # PTouchKit package + CLI tools
+├─ Sources/
+│  ├─ PTouchKit/                 # LabelModel, LabelRenderer, LabelTokens,
+│  │                             #   PTouchCommands, RasterEncoder, transports,
+│  │                             #   PrinterStatus, BootstrapIcons, Resources/icons
+│  ├─ ptsmoke/                   # connect + read status (CLI)
+│  ├─ ptprint/                   # render + print / --preview (CLI)
+│  └─ pticongen/                 # dev tool: rasterize SVGs → icon PNGs
+├─ BTLabel/                      # Xcode app (only macOS functional)
+│  └─ BTLabel/                   # BTLabelApp, PrinterController, ContentView,
+│                                #   SavedLabelModel, StoreManager, PurchaseView, HelpView
+├─ site/                         # btlabel.org static site (GitHub Pages via Actions)
+├─ marketing/                    # App Store listing copy, screenshots, assets
+└─ Icon/                         # app icon master
 ```
 
-One multiplatform app target (macOS + iOS destinations) with the transport file
-compiled per‑platform via `#if os(macOS)` / `#if os(iOS)`.
+The transport is gated with `#if os(macOS)`; the package core (protocol, rendering,
+tokens) is platform‑agnostic so it can be reused by a future iOS relay client.
 
 ## Open questions / next steps
 
 1. ~~Confirm the PT‑P300BT's BLE interface.~~ **Resolved: no BLE (Classic SPP
    only) — iOS blocked for third parties. macOS‑first.** (See above.)
-2. Build the macOS `RFCOMMTransport` from the validated approach; wrap the
-   clean‑room protocol + rendering behind it.
+2. ~~Build the macOS `RFCOMMTransport`; wrap the clean‑room protocol + rendering
+   behind it.~~ **Done — shipping.**
 3. Tape‑size support beyond 12 mm (parity with the CLI's 12 mm assumption).
-4. App Store: iCloud container + entitlements; branding review (no Brother marks);
-   PolyForm Perimeter license noted in the listing.
+4. ~~App Store: iCloud container + entitlements; branding; license in listing.~~
+   **Done — v1.0 submitted 2026‑06‑14.**
+5. **Bluetooth reconnection robustness** — first print after a printer power‑cycle/
+   replug can fail and recover on retry; needs a transport‑level retry / stale‑
+   channel reset (see CLAUDE.md "Known issues").

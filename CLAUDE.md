@@ -7,7 +7,9 @@ A native **macOS** app to design and print labels on the **Brother P-touch
 PT-P300BT** over Bluetooth, with a full-keyboard editor, live preview, favorites,
 symbols, and multi-label/token printing. Independent product — **not affiliated
 with Brother**. License: **PolyForm Perimeter 1.0.0** (use/modify freely, no
-competing product). Intended for the Mac App Store at a modest price.
+competing product). **Submitted to the Mac App Store (v1.0 / build 3, 2026-06-14;
+manual release).** Free to use with a one-time **$14.99** in-app unlock for
+unlimited printing (5-print free trial). Source-available; site at **btlabel.org**.
 
 ## Repo layout
 - **`Package.swift` + `Sources/`** — the `PTouchKit` Swift package (the reusable,
@@ -135,10 +137,16 @@ via TestFlight** (incl. live contact-field refresh) · `LSApplicationCategoryTyp
 
 **Brand name:** **BTLabel** (final).
 
-**Ship-blocking (App Store prep):**
-- **App Store Connect:** create IAP `com.popperbiz.BTLabel.unlock` ($14.99) +
-  generate promo codes.
-- App Store listing assets: screenshots, description, privacy details.
+**Submitted to App Store review 2026-06-14** (v1.0 build 3, manual release). Done:
+IAP `com.popperbiz.BTLabel.unlock` ($14.99, Family Sharing) created + reviewed;
+listing copy/keywords/screenshots (`marketing/`); btlabel.org site (support +
+privacy) via GitHub Pages; `support@btlabel.org` email; App Privacy = Data Not
+Collected; demo video for the print step.
+
+**Post-approval to-dos:**
+- Click **Release** (manual release was chosen).
+- Generate **IAP promo codes** (only available after approval).
+- Update the App Store link on btlabel.org's landing page once live.
 
 **Known issues to investigate:**
 - **Bluetooth reconnection robustness:** after the printer is power-cycled or
