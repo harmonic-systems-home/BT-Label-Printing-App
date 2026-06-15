@@ -48,6 +48,14 @@ hr { border: none; border-top: 1px solid var(--line); margin: 36px 0; }
 footer.site { border-top: 1px solid var(--line); color: var(--muted); font-size: 15px; }
 footer.site .wrap { padding-top: 24px; padding-bottom: 40px; }
 footer.site a { color: var(--muted); margin-right: 18px; }
+.demo { margin: 8px 0 44px; text-align: center; }
+.demo video { width: 100%; max-width: 340px; border-radius: 12px; border: 1px solid var(--line); }
+.demo .cap { color: var(--muted); font-size: 15px; margin-top: 10px; }
+.shots { margin-top: 8px; }
+.shot { margin: 0 0 44px; }
+.shot h2 { margin: 0 0 10px; font-size: 20px; }
+.shot img { width: 100%; height: auto; border-radius: 10px; border: 1px solid var(--line); display: block; }
+.shot p { margin: 8px 0 0; color: var(--muted); }
 @media (prefers-color-scheme: dark) {
   :root { --ink: #f2f2f7; --muted: #9aa0a6; --line: #2c2c2e; --bg: #161617; }
   body { background: var(--bg); color: var(--ink); }
