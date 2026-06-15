@@ -631,7 +631,7 @@ private enum BluetoothRunner {
             let thread = Thread {
                 let t = RFCOMMTransport()
                 do {
-                    try t.connect(nameMatch: name, timeout: 15)
+                    try t.connect(nameMatch: name, timeout: 25)   // allows in-connect retries after a printer power-cycle
                     let (s, msg, ok) = try op(t)
                     t.disconnect()
                     cont.resume(returning: BTResult(status: s, message: msg, ok: ok))

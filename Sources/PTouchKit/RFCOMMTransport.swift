@@ -31,32 +31,58 @@ public final class RFCOMMTransport: NSObject, PrinterTransport, IOBluetoothRFCOM
             throw TransportError.deviceNotFound(nameMatch)
         }
 
-        // Resolve the Serial Port Profile RFCOMM channel via SDP (UUID 0x1101).
-        var channelID: BluetoothRFCOMMChannelID = 0
         let spp = IOBluetoothSDPUUID(uuid16: 0x1101)
-        func resolve() -> Bool {
-            if let rec = device.getServiceRecord(for: spp) {
-                var cid: BluetoothRFCOMMChannelID = 0
-                if rec.getRFCOMMChannelID(&cid) == kIOReturnSuccess, cid != 0 { channelID = cid; return true }
-            }
-            return false
-        }
-        if !resolve() {
-            device.performSDPQuery(nil)
-            spin(until: { resolve() }, deadline: Date().addingTimeInterval(min(timeout, 6)))
-        }
-        if channelID == 0 { channelID = 1 }
+        let deadline = Date().addingTimeInterval(timeout)
 
-        var ch: IOBluetoothRFCOMMChannel?
-        let result = device.openRFCOMMChannelAsync(&ch, withChannelID: channelID, delegate: self)
-        guard result == kIOReturnSuccess else {
-            throw TransportError.openFailed(String(format: "0x%08x", result))
+        // Read the SPP RFCOMM channel ID from the device's SDP record. The cached
+        // record can be stale after a printer power-cycle, so `refresh` forces a
+        // fresh query (used on retries).
+        func channelID(refresh: Bool) -> BluetoothRFCOMMChannelID {
+            func read() -> BluetoothRFCOMMChannelID {
+                guard let rec = device.getServiceRecord(for: spp) else { return 0 }
+                var cid: BluetoothRFCOMMChannelID = 0
+                return rec.getRFCOMMChannelID(&cid) == kIOReturnSuccess ? cid : 0
+            }
+            if !refresh { let c = read(); if c != 0 { return c } }
+            device.performSDPQuery(nil)
+            spin(until: { read() != 0 }, deadline: min(deadline, Date().addingTimeInterval(4)))
+            return read()
         }
-        spin(until: { self.openDone }, deadline: Date().addingTimeInterval(timeout))
-        guard openDone, openStatus == kIOReturnSuccess, let opened = ch else {
-            throw TransportError.openFailed("status \(String(format: "0x%08x", openStatus))")
+
+        // Retry until the deadline. The two things that make the first attempt
+        // after a power-cycle fail (status 0xe00002bc): the ACL link is down, and
+        // the cached SDP channel can be stale. So each attempt explicitly wakes the
+        // baseband link, and retries force a fresh SDP query.
+        var lastError = "unknown"
+        var attempt = 0
+        while Date() < deadline {
+            attempt += 1
+            openDone = false; openStatus = kIOReturnError; closed = false; rx.removeAll()
+
+            // Wake the baseband (ACL) link first — after a power-cycle this re-pages
+            // the printer so the RFCOMM open below succeeds on a live link.
+            _ = device.openConnection()
+
+            var cid = channelID(refresh: attempt > 1)
+            if cid == 0 { cid = 1 }   // SPP channel 1 fallback
+
+            var ch: IOBluetoothRFCOMMChannel?
+            let result = device.openRFCOMMChannelAsync(&ch, withChannelID: cid, delegate: self)
+            if result == kIOReturnSuccess {
+                spin(until: { self.openDone }, deadline: min(deadline, Date().addingTimeInterval(8)))
+                if openDone, openStatus == kIOReturnSuccess, let opened = ch {
+                    channel = opened
+                    return
+                }
+                lastError = "open status \(String(format: "0x%08x", openStatus))"
+                ch?.close()
+            } else {
+                lastError = "openRFCOMMChannelAsync \(String(format: "0x%08x", result))"
+            }
+            // Run-loop-friendly backoff, then retry (fresh SDP next round).
+            spin(until: { false }, deadline: Date().addingTimeInterval(0.5))
         }
-        channel = opened
+        throw TransportError.openFailed("after \(attempt) attempt(s): \(lastError)")
     }
 
     public func send(_ bytes: [UInt8]) throws {
