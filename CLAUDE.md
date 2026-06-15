@@ -140,6 +140,13 @@ via TestFlight** (incl. live contact-field refresh) · `LSApplicationCategoryTyp
   generate promo codes.
 - App Store listing assets: screenshots, description, privacy details.
 
+**Known issues to investigate:**
+- **Bluetooth reconnection robustness:** after the printer is power-cycled or
+  unplugged/replugged, the first print attempt(s) can fail; a few retries recover
+  it. Needs dedicated connect/reconnect testing and likely a transport-level retry
+  / stale-channel reset in `RFCOMMTransport`/`BluetoothRunner` before this is
+  smooth. (Reported 2026-06-14.)
+
 **Nice-to-have / future:**
 - iPhone/iPad app via the **Mac relay** (Bonjour) — reuses PTouchKit rendering.
 - Tape sizes other than 12 mm (status already carries width).
