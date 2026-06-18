@@ -147,6 +147,10 @@ Collected; demo video for the print step.
 - Click **Release** (manual release was chosen).
 - Generate **IAP promo codes** (only available after approval).
 - Update the App Store link on btlabel.org's landing page once live.
+- Ship **build 4 as a 1.0.1 update** (decided not to swap mid-review — would reset
+  the queue position). Build 4 = the Bluetooth power-cycle reconnect fix + any
+  post-build-3 polish already on `main`; just bump `CURRENT_PROJECT_VERSION` to 4,
+  archive, and submit the update after launch.
 
 **Recently fixed:**
 - **Bluetooth reconnection after power-cycle** (was: first connect failed with
