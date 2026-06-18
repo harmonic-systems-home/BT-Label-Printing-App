@@ -21,10 +21,10 @@ struct BTLabelApp: App {
     @StateObject private var store = StoreManager()
     private let container = BTLabelApp.makeContainer()
 
-    /// App Store numeric Apple ID, from App Store Connect → App Information →
-    /// "Apple ID". Used for the Help → Rate BTLabel deep link.
-    /// TODO: replace the placeholder with the real ID.
-    static let appStoreID = "0000000000"
+    /// App Store numeric Apple ID (App Store Connect → App Information → "Apple ID").
+    /// Used for the Help → Rate BTLabel deep link. The link resolves once the app
+    /// is live on the App Store.
+    static let appStoreID = "6780239795"
 
     /// Open the Mac App Store directly to BTLabel's write-a-review sheet.
     static func openWriteReview() {
