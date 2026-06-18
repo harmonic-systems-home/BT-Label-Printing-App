@@ -59,19 +59,21 @@ struct PrinterStatusBar: View {
     @EnvironmentObject private var c: PrinterController
     @EnvironmentObject private var store: StoreManager
     @AppStorage("advancedUI") private var advanced = false
-    // Native rating prompt after the 10th successful print following purchase.
+    // Native rating prompt at post-purchase print milestones.
     @Environment(\.requestReview) private var requestReview
     @AppStorage("printsSincePurchase") private var printsSincePurchase = 0
-    @AppStorage("reviewRequested") private var reviewRequested = false
     @State private var showPurchase = false
     private var canPrint: Bool { store.isUnlocked || c.freePrintsLeft > 0 }
 
-    /// Count post-purchase prints; ask for a review once, on the 10th.
+    /// Count post-purchase prints and offer a rating at the 10th, then every 20th
+    /// after (10, 30, 50, …). The system caps real prompts at ~3/year and ignores
+    /// extra calls, so these spaced milestones just give it good opportunities —
+    /// it stops asking once the user rates the current version.
     private func noteSuccessfulPrint() {
         guard store.isUnlocked else { return }
         printsSincePurchase += 1
-        if printsSincePurchase >= 10 && !reviewRequested {
-            reviewRequested = true
+        let n = printsSincePurchase
+        if n == 10 || (n > 10 && (n - 10) % 20 == 0) {
             requestReview()
         }
     }
