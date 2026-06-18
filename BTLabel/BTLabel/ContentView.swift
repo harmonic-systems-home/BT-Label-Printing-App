@@ -1,6 +1,7 @@
 import SwiftUI
 import SwiftData
 import AppKit
+import StoreKit
 import UniformTypeIdentifiers
 import PTouchKit
 
@@ -58,8 +59,22 @@ struct PrinterStatusBar: View {
     @EnvironmentObject private var c: PrinterController
     @EnvironmentObject private var store: StoreManager
     @AppStorage("advancedUI") private var advanced = false
+    // Native rating prompt after the 10th successful print following purchase.
+    @Environment(\.requestReview) private var requestReview
+    @AppStorage("printsSincePurchase") private var printsSincePurchase = 0
+    @AppStorage("reviewRequested") private var reviewRequested = false
     @State private var showPurchase = false
     private var canPrint: Bool { store.isUnlocked || c.freePrintsLeft > 0 }
+
+    /// Count post-purchase prints; ask for a review once, on the 10th.
+    private func noteSuccessfulPrint() {
+        guard store.isUnlocked else { return }
+        printsSincePurchase += 1
+        if printsSincePurchase >= 10 && !reviewRequested {
+            reviewRequested = true
+            requestReview()
+        }
+    }
     var body: some View {
         HStack(spacing: 12) {
             Image(systemName: "printer")
@@ -90,7 +105,8 @@ struct PrinterStatusBar: View {
                 .help("Free trial — unlock unlimited printing")
             }
             Button {
-                if canPrint { Task { await c.printCurrent() } } else { showPurchase = true }
+                if canPrint { Task { if await c.printCurrent() { noteSuccessfulPrint() } } }
+                else { showPurchase = true }
             } label: {
                 if canPrint {
                     Label(c.copies > 1 ? "Print \(c.copies)" : "Print", systemImage: "printer.fill")
@@ -107,7 +123,7 @@ struct PrinterStatusBar: View {
         .sheet(isPresented: $showPurchase) { PurchaseView().environmentObject(store).environmentObject(c) }
         .alert("Wrong tape loaded", isPresented: Binding(get: { c.pendingMismatchPrint },
                                                          set: { c.pendingMismatchPrint = $0 })) {
-            Button("Print Anyway") { Task { await c.printCurrent(force: true) } }
+            Button("Print Anyway") { Task { if await c.printCurrent(force: true) { noteSuccessfulPrint() } } }
             Button("Cancel", role: .cancel) {}
         } message: {
             Text("This label is designed for \(TapePreset.name(tape: c.designTape, text: c.designText)), "

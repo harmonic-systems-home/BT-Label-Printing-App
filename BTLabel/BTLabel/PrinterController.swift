@@ -484,7 +484,8 @@ final class PrinterController: ObservableObject {
         }
     }
 
-    func printCurrent(force: Bool = false) async {
+    @discardableResult
+    func printCurrent(force: Bool = false) async -> Bool {
         let n = max(1, copies)
         let gap = max(0, Int((spacingMM / 0.149).rounded()))
         let strip = 18   // end-margin dots at the very ends of the strip
@@ -503,7 +504,7 @@ final class PrinterController: ObservableObject {
             all += r.rows
             any = true
         }
-        guard any else { message = "Nothing to print"; return }
+        guard any else { message = "Nothing to print"; return false }
         all += Self.blankRows(strip)
         let rows = all
         let length = Double(rows.count) * 0.149 / 10
@@ -525,6 +526,7 @@ final class PrinterController: ObservableObject {
             message = "Wrong tape loaded"
             pendingMismatchPrint = true
         }
+        return printed
     }
 
     private static func blankRows(_ n: Int) -> [[UInt8]] {

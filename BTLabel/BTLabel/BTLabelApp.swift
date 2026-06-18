@@ -21,6 +21,17 @@ struct BTLabelApp: App {
     @StateObject private var store = StoreManager()
     private let container = BTLabelApp.makeContainer()
 
+    /// App Store numeric Apple ID, from App Store Connect → App Information →
+    /// "Apple ID". Used for the Help → Rate BTLabel deep link.
+    /// TODO: replace the placeholder with the real ID.
+    static let appStoreID = "0000000000"
+
+    /// Open the Mac App Store directly to BTLabel's write-a-review sheet.
+    static func openWriteReview() {
+        let s = "macappstore://apps.apple.com/app/id\(appStoreID)?action=write-review"
+        if let url = URL(string: s) { NSWorkspace.shared.open(url) }
+    }
+
     var body: some Scene {
         WindowGroup {
             ContentView()
@@ -34,6 +45,7 @@ struct BTLabelApp: App {
             CommandGroup(replacing: .help) {
                 Button("BTLabel Help") { controller.showHelp = true }
                     .keyboardShortcut("?", modifiers: .command)
+                Button("Rate BTLabel") { BTLabelApp.openWriteReview() }
             }
         }
     }
