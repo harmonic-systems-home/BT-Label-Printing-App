@@ -40,6 +40,7 @@ struct ContentView: View {
         }
         .sheet(isPresented: $showSettings) { SettingsSheet().environmentObject(c).environmentObject(store) }
         .sheet(isPresented: $c.showHelp) { HelpView() }
+        .sheet(isPresented: $c.showPurchase) { PurchaseView().environmentObject(store).environmentObject(c) }
         .onAppear {
             c.modelContext = modelContext
             // Focus + select the default label text so the user can just start typing.
@@ -99,12 +100,18 @@ struct PrinterStatusBar: View {
             Toggle("Advanced", isOn: $advanced)
                 .toggleStyle(.checkbox)
                 .help("Show cell management and per-cell formatting controls")
-            if !store.isUnlocked && c.freePrintsLeft > 0 {
-                Button { showPurchase = true } label: {
-                    Text("\(c.freePrintsLeft) free prints left").font(.caption)
+            if !store.isUnlocked {
+                if c.freePrintsLeft > 0 {
+                    Text("\(c.freePrintsLeft) free prints left")
+                        .font(.caption).foregroundStyle(.secondary)
                 }
-                .buttonStyle(.plain).foregroundStyle(.secondary)
-                .help("Free trial — unlock unlimited printing")
+                // Always-visible purchase entry so the unlock is reachable without
+                // exhausting the print trial (which needs a printer to do).
+                Button { showPurchase = true } label: {
+                    Label(store.priceText.map { "Unlock \($0)" } ?? "Unlock",
+                          systemImage: "lock.open")
+                }
+                .help("Unlock unlimited printing — one-time purchase")
             }
             Button {
                 if canPrint { Task { if await c.printCurrent() { noteSuccessfulPrint() } } }

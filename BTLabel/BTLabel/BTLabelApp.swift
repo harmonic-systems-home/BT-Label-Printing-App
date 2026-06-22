@@ -47,6 +47,12 @@ struct BTLabelApp: App {
                     .keyboardShortcut("?", modifiers: .command)
                 Button("Rate BTLabel") { BTLabelApp.openWriteReview() }
             }
+            // Purchase entry in the app menu, hidden once unlocked.
+            CommandGroup(after: .appInfo) {
+                if !store.isUnlocked {
+                    Button("Unlock BTLabel…") { controller.showPurchase = true }
+                }
+            }
         }
     }
 

@@ -37,6 +37,8 @@ final class PrinterController: ObservableObject {
     @Published var focusTextToken = 0
     /// Toggled to present the Help window (from the `?` toolbar button or Help menu).
     @Published var showHelp = false
+    /// Toggled to present the purchase sheet (from the Store menu item).
+    @Published var showPurchase = false
 
     // The tape this label is designed for (Brother colour codes); drives the
     // tinted preview and the print-time mismatch warning. Default: black on white.
