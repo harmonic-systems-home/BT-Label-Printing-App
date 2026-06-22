@@ -100,18 +100,11 @@ struct PrinterStatusBar: View {
             Toggle("Advanced", isOn: $advanced)
                 .toggleStyle(.checkbox)
                 .help("Show cell management and per-cell formatting controls")
-            if !store.isUnlocked {
-                if c.freePrintsLeft > 0 {
-                    Text("\(c.freePrintsLeft) free prints left")
-                        .font(.caption).foregroundStyle(.secondary)
-                }
-                // Always-visible purchase entry so the unlock is reachable without
-                // exhausting the print trial (which needs a printer to do).
-                Button { showPurchase = true } label: {
-                    Label(store.priceText.map { "Unlock \($0)" } ?? "Unlock",
-                          systemImage: "lock.open")
-                }
-                .help("Unlock unlimited printing — one-time purchase")
+            // A quiet trial indicator (no price/CTA — the purchase lives in Settings,
+            // the app menu, and the "Purchase to Print" button once the trial ends).
+            if !store.isUnlocked && c.freePrintsLeft > 0 {
+                Text("\(c.freePrintsLeft) free prints left")
+                    .font(.caption).foregroundStyle(.secondary)
             }
             Button {
                 if canPrint { Task { if await c.printCurrent() { noteSuccessfulPrint() } } }

@@ -100,12 +100,9 @@ unlimited printing after a 5-print free trial; it can be tested in the StoreKit
 sandbox at no charge.
 
 HOW TO TEST THE IN-APP PURCHASE (no printer or trial exhaustion needed):
-The purchase is reachable at any time, in three places:
-1. The "Unlock $14.99" button in the top toolbar (shown whenever the app is not
-   yet unlocked).
-2. The app menu (BTLabel) -> "Unlock BTLabel...".
-3. Settings (gear icon) -> "Unlock...".
-Any of these opens the purchase sheet for "BTLabel - Full Version" ($14.99) with a
-Buy button, which completes in the StoreKit sandbox at no charge. (Note: build 3
-only surfaced the purchase after the 5-print trial, which a reviewer can't exhaust
-without the printer — build 4 makes it always available.)
+The purchase is reachable at any time without a printer, in two places:
+1. The app menu (BTLabel) -> "Unlock BTLabel...".
+2. Settings (gear icon) -> "Unlock...".
+Either opens the purchase sheet for "BTLabel - Full Version" ($14.99) with a Buy
+button, which completes in the StoreKit sandbox at no charge. (When the 5-print
+free trial is used up, the Print button also changes to "Purchase to Print".)
