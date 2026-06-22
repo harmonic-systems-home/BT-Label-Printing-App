@@ -143,6 +143,17 @@ listing copy/keywords/screenshots (`marketing/`); btlabel.org site (support +
 privacy) via GitHub Pages; `support@btlabel.org` email; App Privacy = Data Not
 Collected; demo video for the print step.
 
+**Rejected 2026-06-22** (Guideline 2.1b — "IAP not present"). Real cause was
+account-level, not the app: the **Paid Apps Agreement was unsigned** (banking/tax
+incomplete), so StoreKit returned no products → the purchase sheet showed "store
+unavailable." Also discovered the IAP **price was accidentally $0.00** (must be set
+via Price Schedule → `+` → $14.99 USD base). Fixes: signed Paid Apps Agreement +
+banking + tax (W-9, individual/sole-prop, non-exempt); set price $14.99; build 5
+adds menu/Settings purchase paths + a DEBUG-gated "store unavailable" message (the
+old one mentioned Xcode). Lesson: a paid IAP needs the **active Paid Apps Agreement
+(banking+tax fully processed)** before products load anywhere; verify the product
+loads in TestFlight (shows real price) before resubmitting.
+
 **Post-approval to-dos:**
 - Click **Release** (manual release was chosen).
 - Generate **IAP promo codes** (only available after approval).
