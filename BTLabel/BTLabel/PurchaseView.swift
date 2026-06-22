@@ -38,8 +38,13 @@ struct PurchaseView: View {
                 ProgressView().controlSize(.small)
                 Text("Loading store…").font(.caption).foregroundStyle(.secondary)
             } else {
+                #if DEBUG
                 Text("The store is unavailable. In Xcode, select a StoreKit configuration (Edit Scheme → Run → Options); on a shipped build this means the App Store is unreachable.")
                     .font(.caption).foregroundStyle(.secondary).multilineTextAlignment(.center)
+                #else
+                Text("The App Store isn't available right now. Please check your internet connection and try again in a moment.")
+                    .font(.caption).foregroundStyle(.secondary).multilineTextAlignment(.center)
+                #endif
                 Button("Try Again") { Task { await store.loadProduct() } }
                 Button("Restore Purchase") {
                     Task { await store.restore(); if store.isUnlocked { dismiss() } }
