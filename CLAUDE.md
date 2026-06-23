@@ -7,9 +7,10 @@ A native **macOS** app to design and print labels on the **Brother P-touch
 PT-P300BT** over Bluetooth, with a full-keyboard editor, live preview, favorites,
 symbols, and multi-label/token printing. Independent product — **not affiliated
 with Brother**. License: **PolyForm Perimeter 1.0.0** (use/modify freely, no
-competing product). **Submitted to the Mac App Store (v1.0 / build 3, 2026-06-14;
-manual release).** Free to use with a one-time **$14.99** in-app unlock for
-unlimited printing (5-print free trial). Source-available; site at **btlabel.org**.
+competing product). **LIVE on the Mac App Store (v1.0 / build 5, released
+2026-06-23):** https://apps.apple.com/app/id6780239795 (Apple ID 6780239795).
+Free to use with a one-time **$14.99** in-app unlock for unlimited printing
+(5-print free trial). Source-available; site at **btlabel.org**.
 
 ## Repo layout
 - **`Package.swift` + `Sources/`** — the `PTouchKit` Swift package (the reusable,
