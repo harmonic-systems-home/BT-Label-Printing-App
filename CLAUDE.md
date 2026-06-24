@@ -155,14 +155,19 @@ old one mentioned Xcode). Lesson: a paid IAP needs the **active Paid Apps Agreem
 (banking+tax fully processed)** before products load anywhere; verify the product
 loads in TestFlight (shows real price) before resubmitting.
 
-**Post-approval to-dos:**
-- Click **Release** (manual release was chosen).
-- Generate **IAP promo codes** (only available after approval).
-- Update the App Store link on btlabel.org's landing page once live.
-- Ship **build 4 as a 1.0.1 update** (decided not to swap mid-review — would reset
-  the queue position). Build 4 = the Bluetooth power-cycle reconnect fix + any
-  post-build-3 polish already on `main`; just bump `CURRENT_PROJECT_VERSION` to 4,
-  archive, and submit the update after launch.
+**Post-launch to-dos:**
+- ~~Release · App Store link on btlabel.org~~ done. Generate **IAP promo codes**.
+- Ship a **1.0.1 update** carrying the work already on `main` not in build 5:
+  the **Bluetooth power-cycle reconnect fix** + the **rating prompts** (Help → Rate
+  BTLabel deep link; `requestReview()` at the 10th/every-20th post-purchase print).
+  Bump `CURRENT_PROJECT_VERSION` to 6, archive, submit. (App updates review faster.)
+
+**Competitive note:** Brother's own **P-touch Editor for Mac** (free, popular) does
+**not** support the PT-P300BT — confirmed via its model list (supports P710BT,
+P910BT, D460BT, E310BT… but not P300BT). So for *PT-P300BT + Mac*, BTLabel is
+effectively the only option. Strengths to lean on: works with the printer · native
+simple Mac UX · **paste anything** (vs. fixed clip-art library) · iCloud sync ·
+tokens. Decided **not** to add barcodes (pro feature, wrong for the Cube audience).
 
 **Recently fixed:**
 - **Bluetooth reconnection after power-cycle** (was: first connect failed with
@@ -172,6 +177,14 @@ loads in TestFlight (shows real price) before resubmitting.
   Verified with `ptsmoke` connecting on the first try right after a power-cycle.
 
 **Nice-to-have / future:**
+- **Larger font list** (easy win): replace the hand-curated `fontChoices` in
+  ContentView with `NSFontManager.shared.availableFontFamilies` (sorted, a few
+  favorites pinned on top). Answers Brother's much bigger font menu.
+- **Portrait vs landscape** orientation (moderate): rotate the rendered raster 90°
+  in `LabelRenderer` + preview; portrait height is capped by the ~9 mm band, so it
+  suits short/vertical labels (cable flags, spine labels).
+- **Marketing polish:** elevate **paste** (grab any web symbol/logo) to a headline
+  feature, and sharpen description/keywords around **"Mac app for the PT-P300BT."**
 - iPhone/iPad app via the **Mac relay** (Bonjour) — reuses PTouchKit rendering.
 - Tape sizes other than 12 mm (status already carries width).
 - Symbol **categories** (text filter exists; categories don't).
