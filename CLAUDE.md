@@ -70,6 +70,13 @@ PNG to verify output without wasting tape. Verify app compiles with `xcodebuild`
   there's no review prompt, and Settings shows "Free edition".
 - Gate store-only behavior on `StoreManager.isAppStoreBuild` / `#if APP_STORE`.
   Never mention or link the free edition from App Store builds (App Review).
+- **Releases:** `scripts/release-github.sh` (free edition: Developer ID + notarize;
+  reads `APPLE_ID`/`APPLE_ID_PASSWORD`/`APPLE_TEAM_ID` from the environment) and
+  `scripts/release-appstore.sh --upload` (App Store edition). **No Apple account is
+  signed in to Xcode**, so Organizer's Distribute fails with "App Store Connect
+  access ... is required"; the script instead passes the App Store Connect API key
+  (`~/.appstoreconnect/credentials.env`, Admin key — a Developer-role key can't use
+  cloud-managed distribution certs) to `xcodebuild` and `altool`.
 - Both editions use bundle id `com.popperbiz.BTLabel`, so they share the sandbox
   container and local store. Moving free → App Store should keep local data (not
   yet verified).
