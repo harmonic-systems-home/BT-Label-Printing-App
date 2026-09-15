@@ -80,6 +80,10 @@ PNG to verify output without wasting tape. Verify app compiles with `xcodebuild`
 - **Status 32 bytes:** model[4]=0x72, errors[8|9], width mm[10], media type[11],
   status type[18], phase type[19]/num[20-21]. Tape colour[26]/text[27] (this
   model; not the spec's 24/25). Known-good ready bytes: `802042307230…0c01…0108…`.
+- **After `0x1A` the first status frame is a "printing" phase change (type 0x06),
+  not success.** Errors can follow it, e.g. low battery (error1 `0x08`) with a bad
+  label. `PrintJob.send` keeps reading frames until type 0x01 (printing completed)
+  and throws `PrintError` on an error/power-off frame or a length-scaled timeout.
 - Protocol is a **clean-room** reimplementation of Brother's documented raster
   command set (the Python repo `~/Development/GitHub/PT-P300BT` was used to
   *observe* exact bytes, not copied).

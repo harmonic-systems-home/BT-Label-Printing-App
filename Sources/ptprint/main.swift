@@ -85,7 +85,7 @@ do {
     }
     err("Rendering \"\(text)\" -> \(rows.count) raster lines (~\(String(format: "%.1f", Double(rows.count) * 0.149 / 10)) cm).")
     let result = try PrintJob.send(rows: rows, status: status, to: transport)
-    if let r = result { err("Post-print status: \(r.summary)") }
+    err("Post-print status: \(result.summary)")
     transport.disconnect()
     err("Done.")
     exit(0)
