@@ -58,6 +58,22 @@ xcodebuild -project BTLabel/BTLabel.xcodeproj -scheme BTLabel -destination 'plat
 **Workflow tip:** after editing the renderer, use `ptprint --preview` and view the
 PNG to verify output without wasting tape. Verify app compiles with `xcodebuild`.
 
+## Editions (APP_STORE build flag)
+- **App Store edition** = the `AppStore` build configuration. It defines the Swift
+  flag `APP_STORE` and is the only configuration with `CODE_SIGN_ENTITLEMENTS`
+  (iCloud/CloudKit + aps). The flag enables the 5-print trial and the IAP
+  (`StoreManager`), plus the CloudKit `ModelContainer`. Both shared schemes
+  **archive** AppStore; the **BTLabel App Store** scheme also runs it.
+- **Free edition** = Debug/Release (anyone building from source, and the GitHub
+  release made by `scripts/release-github.sh`: Developer ID, notarized). No flag
+  means `StoreManager` starts unlocked and never calls StoreKit, storage is local,
+  there's no review prompt, and Settings shows "Free edition".
+- Gate store-only behavior on `StoreManager.isAppStoreBuild` / `#if APP_STORE`.
+  Never mention or link the free edition from App Store builds (App Review).
+- Both editions use bundle id `com.popperbiz.BTLabel`, so they share the sandbox
+  container and local store. Moving free → App Store should keep local data (not
+  yet verified).
+
 ## Printer / protocol facts (PT-P300BT)
 - **Bluetooth Classic (SPP/RFCOMM) only — NO BLE.** Verified by CoreBluetooth
   scan. macOS connects via IOBluetooth RFCOMM (SDP UUID 0x1101, channel 1). The

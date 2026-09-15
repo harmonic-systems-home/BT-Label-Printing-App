@@ -18,12 +18,19 @@ Website: **[btlabel.org](https://btlabel.org)** · Support: **[btlabel.org/suppo
 on macOS: native IOBluetooth RFCOMM transport, clean‑room raster protocol, and the
 full SwiftUI editor. See [ARCHITECTURE.md](ARCHITECTURE.md).
 
-## Pricing
+## Editions & pricing
 
-Free to use with a **5‑print free trial**; a one‑time **$14.99** in‑app purchase
-unlocks unlimited printing (Family Sharing supported). The app is also
-**source‑available** here — you may build it yourself for free; the App Store build
-is a signed, notarized, auto‑updating packaging convenience.
+| | **Mac App Store** | **Free (GitHub release)** |
+|---|---|---|
+| Price | 5‑print free trial, then a one‑time **$14.99** unlock (Family Sharing) | Free |
+| Printing | Unlimited once unlocked | Unlimited |
+| iCloud sync (favorites, folders, history, settings) | ✅ | — stored on this Mac |
+| Updates | Automatic | Download new releases yourself |
+| Install | [Mac App Store](https://apps.apple.com/app/id6780239795) | Signed, notarized zip from [Releases](https://github.com/harmonic-systems-home/BT-Label-Printing-App/releases/latest) |
+
+Both editions are built from this repo; the difference is one build flag (see
+[Editions](#editions-build-flag)). The app is **source‑available**, so you may also
+build the free edition yourself.
 
 ## Features
 
@@ -38,7 +45,8 @@ is a signed, notarized, auto‑updating packaging convenience.
 - **Favorites with folders** + automatic **print history**.
 - **Substitution tokens** — `/n /p /s /e` (contact), `/i /c` (numbering), `/d`
   plus `/d1`–`/d5` (dates); multi‑copy printing with auto‑numbering.
-- **iCloud sync** — favorites, folders, history, and settings follow you across Macs.
+- **iCloud sync** (App Store edition) — favorites, folders, history, and settings
+  follow you across Macs.
 
 ## Platforms
 
@@ -72,6 +80,24 @@ xcodebuild -project BTLabel/BTLabel.xcodeproj -scheme BTLabel -destination 'plat
 `ptsmoke` is a connectivity smoke test — it pairs with the printer (name match
 "PT-P300"), reads the 32‑byte status, and prints the decoded tape width/color and
 ready state. Open `Package.swift` or the `.xcodeproj` in Xcode to work on the code.
+
+To build the app with your own Apple ID, open `BTLabel/BTLabel.xcodeproj`, choose
+your team under **Signing & Capabilities** (change the bundle identifier if Xcode
+reports it's taken), and press ⌘R.
+
+### Editions (build flag)
+
+| Configuration | `APP_STORE` flag | Print trial + in‑app purchase | iCloud entitlements | Used by |
+|---|---|---|---|---|
+| Debug / Release | — | — (unlimited) | — (local storage) | ⌘R, `xcodebuild build`, GitHub release |
+| **AppStore** | ✅ | ✅ | ✅ | Product → Archive, **BTLabel App Store** scheme |
+
+- **App Store:** Product → Archive. Both schemes archive the AppStore configuration.
+  Use the **BTLabel App Store** scheme to run that edition locally (trial, StoreKit
+  test purchases, iCloud).
+- **GitHub release:** `scripts/release-github.sh` archives the Release
+  configuration, exports it with Developer ID, notarizes, and staples. It writes
+  `build/github-release/BTLabel-<version>.zip` (setup notes are in the script).
 
 ## Implementation note (clean‑room)
 

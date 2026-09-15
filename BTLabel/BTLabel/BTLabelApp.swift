@@ -56,17 +56,18 @@ struct BTLabelApp: App {
         }
     }
 
-    /// Prefer a CloudKit-synced store; fall back to a local-only store if iCloud
-    /// isn't fully configured yet (e.g. no container selected), so the app never
-    /// crashes on launch.
+    /// The App Store edition prefers a CloudKit-synced store, falling back to a
+    /// local-only store if iCloud isn't available, so the app never crashes on
+    /// launch. Other builds have no iCloud entitlement and always store locally.
     static func makeContainer() -> ModelContainer {
         let schema = Schema([SavedLabelModel.self, AppSettings.self, FavoriteFolder.self])
-        do {
-            return try ModelContainer(for: schema,
-                configurations: ModelConfiguration(schema: schema, cloudKitDatabase: .automatic))
-        } catch {
-            return try! ModelContainer(for: schema,
-                configurations: ModelConfiguration(schema: schema, cloudKitDatabase: .none))
+        #if APP_STORE
+        if let synced = try? ModelContainer(for: schema,
+            configurations: ModelConfiguration(schema: schema, cloudKitDatabase: .automatic)) {
+            return synced
         }
+        #endif
+        return try! ModelContainer(for: schema,
+            configurations: ModelConfiguration(schema: schema, cloudKitDatabase: .none))
     }
 }

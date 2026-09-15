@@ -2,11 +2,21 @@ import Foundation
 import Combine
 import StoreKit
 
-/// Owns the one-time "unlock" in-app purchase. The app is free with a print-limited
-/// trial; buying the unlock removes the print limit. Everything else (design,
-/// favorites, history) is always available.
+/// Owns the one-time "unlock" in-app purchase. The App Store edition is free with a
+/// print-limited trial; buying the unlock removes the print limit. Everything else
+/// (design, favorites, history) is always available.
+///
+/// Builds without the `APP_STORE` flag (the free GitHub release and builds from
+/// source) have no trial: they start unlocked and never touch StoreKit.
 @MainActor
 final class StoreManager: ObservableObject {
+    /// Set only by the AppStore build configuration, which also adds iCloud sync.
+    #if APP_STORE
+    static let isAppStoreBuild = true
+    #else
+    static let isAppStoreBuild = false
+    #endif
+
     /// Non-consumable product id (configure the same id in App Store Connect and in
     /// the local .storekit test configuration).
     static let unlockProductID = "com.popperbiz.BTLabel.unlock"
@@ -21,6 +31,7 @@ final class StoreManager: ObservableObject {
     private var updates: Task<Void, Never>?
 
     init() {
+        guard Self.isAppStoreBuild else { isUnlocked = true; loaded = true; return }
         updates = listenForTransactions()
         Task { await loadProduct(); await refreshEntitlement() }
     }

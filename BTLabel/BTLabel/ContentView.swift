@@ -71,7 +71,7 @@ struct PrinterStatusBar: View {
     /// extra calls, so these spaced milestones just give it good opportunities —
     /// it stops asking once the user rates the current version.
     private func noteSuccessfulPrint() {
-        guard store.isUnlocked else { return }
+        guard StoreManager.isAppStoreBuild, store.isUnlocked else { return }
         printsSincePurchase += 1
         let n = printsSincePurchase
         if n == 10 || (n > 10 && (n - 10) % 20 == 0) {
@@ -487,7 +487,11 @@ struct SettingsSheet: View {
 
             Divider()
             Text("License").font(.headline)
-            if store.isUnlocked {
+            if !StoreManager.isAppStoreBuild {
+                Label("Free edition — unlimited printing", systemImage: "checkmark.seal.fill").foregroundStyle(.green)
+                Text("Favorites and settings are stored on this Mac only. The Mac App Store edition adds iCloud sync and automatic updates.")
+                    .font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            } else if store.isUnlocked {
                 Label("Full version — purchased", systemImage: "checkmark.seal.fill").foregroundStyle(.green)
             } else {
                 HStack {
