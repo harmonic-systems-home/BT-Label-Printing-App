@@ -14,9 +14,11 @@ Website: **[btlabel.org](https://btlabel.org)** · Support: **[btlabel.org/suppo
 
 ## Status
 
-**v1.0 submitted to the Mac App Store (2026‑06‑14).** The app is feature‑complete
-on macOS: native IOBluetooth RFCOMM transport, clean‑room raster protocol, and the
-full SwiftUI editor. See [ARCHITECTURE.md](ARCHITECTURE.md).
+**Live on the [Mac App Store](https://apps.apple.com/app/id6780239795)**, with a
+free edition on [GitHub Releases](https://github.com/harmonic-systems-home/BT-Label-Printing-App/releases/latest).
+The app is feature‑complete on macOS: native IOBluetooth RFCOMM transport,
+clean‑room raster protocol, and the full SwiftUI editor. See
+[ARCHITECTURE.md](ARCHITECTURE.md).
 
 ## Editions & pricing
 
@@ -52,7 +54,7 @@ build the free edition yourself.
 
 | Platform | Bluetooth path | Status |
 |---|---|---|
-| **macOS 13+** | IOBluetooth RFCOMM (Bluetooth Classic / SPP) | ✅ Shipping (primary target) |
+| **macOS 26.5+** (the `PTouchKit` package alone builds on macOS 13+) | IOBluetooth RFCOMM (Bluetooth Classic / SPP) | ✅ Shipping (primary target) |
 | iPadOS / iOS 16+ | — | 🔴 Blocked: the PT‑P300BT has **no BLE** (Classic SPP only), and iOS Classic SPP needs MFi. A future **Mac‑relay** path (Bonjour) could reuse the rendering layer. See [ARCHITECTURE.md](ARCHITECTURE.md#bluetooth-on-ios-resolved--ios-is-blocked-for-now). |
 
 ## Supported hardware
