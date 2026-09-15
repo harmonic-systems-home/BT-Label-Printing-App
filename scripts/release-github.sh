@@ -5,10 +5,13 @@
 #
 # Output: build/github-release/BTLabel-<version>.zip  (attach it to a GitHub release)
 #
-# One-time setup — store notarization credentials in the keychain:
-#   xcrun notarytool store-credentials BTLabel --apple-id <apple-id> --team-id 8H3FX5B8KD
-# (use an app-specific password from account.apple.com). Override the profile name
-# with NOTARY_PROFILE=...; set NOTARIZE=0 for an unsigned-by-Apple local dry run.
+# Notarization credentials — either:
+#   - APPLE_ID, APPLE_ID_PASSWORD (app-specific password) and APPLE_TEAM_ID in the
+#     environment (the same variables the Rust CLI repos use locally and as GitHub
+#     secrets), or
+#   - a notarytool keychain profile, by default "BTLabel" (override: NOTARY_PROFILE):
+#       xcrun notarytool store-credentials BTLabel --apple-id <apple-id> --team-id 8H3FX5B8KD
+# Set NOTARIZE=0 for a local dry run that skips notarization.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
@@ -55,7 +58,12 @@ ZIP="$OUT/BTLabel-$VERSION.zip"
 if [[ "${NOTARIZE:-1}" != 0 ]]; then
     echo "==> Notarizing $VERSION ($BUILD)"
     ditto -c -k --keepParent "$APP" "$OUT/notarize.zip"
-    xcrun notarytool submit "$OUT/notarize.zip" --keychain-profile "$PROFILE" --wait
+    if [[ -n "${APPLE_ID:-}" && -n "${APPLE_ID_PASSWORD:-}" ]]; then
+        CREDS=(--apple-id "$APPLE_ID" --password "$APPLE_ID_PASSWORD" --team-id "${APPLE_TEAM_ID:-$TEAM_ID}")
+    else
+        CREDS=(--keychain-profile "$PROFILE")
+    fi
+    xcrun notarytool submit "$OUT/notarize.zip" "${CREDS[@]}" --wait
     xcrun stapler staple "$APP"
     rm "$OUT/notarize.zip"
     spctl --assess --type execute --verbose "$APP"
