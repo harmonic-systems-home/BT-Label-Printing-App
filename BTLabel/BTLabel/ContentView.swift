@@ -126,11 +126,16 @@ struct PrinterStatusBar: View {
         .alert("Wrong tape loaded", isPresented: Binding(get: { c.pendingMismatchPrint },
                                                          set: { c.pendingMismatchPrint = $0 })) {
             Button("Print Anyway") { Task { if await c.printCurrent(force: true) { noteSuccessfulPrint() } } }
+            Button("Don't Warn Again") {
+                c.ignoreTapeMismatch = true
+                Task { if await c.printCurrent(force: true) { noteSuccessfulPrint() } }
+            }
             Button("Cancel", role: .cancel) {}
         } message: {
             Text("This label is designed for \(TapePreset.name(tape: c.designTape, text: c.designText)), "
                  + "but \(c.status.map { TapePreset.name(tape: $0.tapeColor, text: $0.textColor) } ?? "another tape") "
-                 + "is loaded.")
+                 + "is loaded. Third-party cartridges often report the colour of the shell they "
+                 + "reuse, so “Don’t Warn Again” skips this check until you quit BTLabel.")
         }
     }
 }

@@ -107,6 +107,12 @@ PNG to verify output without wasting tape. Verify app compiles with `xcodebuild`
   not success.** Errors can follow it, e.g. low battery (error1 `0x08`) with a bad
   label. `PrintJob.send` keeps reading frames until type 0x01 (printing completed)
   and throws `PrintError` on an error/power-off frame or a length-scaled timeout.
+- **Tape colour comes from the cassette shell, not the tape.** The printer reads
+  molded holes, so third-party cartridges report whatever shell they reuse —
+  confirmed 2026-09-15: a black-on-red 12mm cartridge reports tape 0x01 / text 0x08
+  (byte-identical to a genuine black-on-white TZe). Not a decoding bug; check raw
+  [26]/[27] with `ptsmoke` before suspecting one. Hence "Don't Warn Again"
+  (`PrinterController.ignoreTapeMismatch`, session-only) on the mismatch alert.
 - Protocol is a **clean-room** reimplementation of Brother's documented raster
   command set (the Python repo `~/Development/GitHub/PT-P300BT` was used to
   *observe* exact bytes, not copied).

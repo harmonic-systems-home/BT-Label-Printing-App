@@ -65,6 +65,12 @@ final class PrinterController: ObservableObject {
     @Published var pendingMismatchPrint = false
     static let mismatchSentinel = "\u{1}tape-mismatch"
 
+    /// Set by "Don't Warn Again" on the mismatch alert: skip the tape check for the
+    /// rest of the session. Third-party cartridges often report the colour of the
+    /// shell they reuse (typically black on white), so the check can't be satisfied.
+    /// Deliberately not persisted — it resets on relaunch.
+    @Published var ignoreTapeMismatch = false
+
     /// Free-trial print allowance (designing & favorites are always free). Once the
     /// unlock is purchased the count is ignored. Persisted locally.
     static let freePrintLimit = 5
@@ -512,11 +518,12 @@ final class PrinterController: ObservableObject {
         let length = Double(rows.count) * 0.149 / 10
         let snapshotCells = cells, snapshotSpacing = cellSpacingMM
         let dTape = designTape
+        let ignoreMismatch = ignoreTapeMismatch
         let printed = await perform(n > 1 ? "Printing \(n) labels…" : "Printing…") { t in
             let s = try t.queryStatus(timeout: 6)
             guard s.isReadyToPrint else { return (s, "Printer not ready: \(s.summary)", false) }
             // Confirm the freshly-queried installed tape matches the design tape.
-            if !force && s.tapeColor != dTape { return (s, Self.mismatchSentinel, false) }
+            if !force && !ignoreMismatch && s.tapeColor != dTape { return (s, Self.mismatchSentinel, false) }
             _ = try PrintJob.send(rows: rows, status: s, to: t)
             return (s, String(format: "Printed %d (~%.1f cm)", n, length), true)
         }
