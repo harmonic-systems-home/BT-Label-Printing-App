@@ -114,7 +114,7 @@ PNG to verify output without wasting tape. Verify app compiles with `xcodebuild`
   [26]/[27] with `ptsmoke` before suspecting one. Hence "Don't Warn Again"
   (`PrinterController.ignoreTapeMismatch`, session-only) on the mismatch alert.
 - Protocol is a **clean-room** reimplementation of Brother's documented raster
-  command set (the Python repo `~/Development/GitHub/PT-P300BT` was used to
+  command set (the Python repo `/Volumes/Express2T/Development/GitHub/PT-P300BT` was used to
   *observe* exact bytes, not copied).
 
 ## Rendering gotchas (learned the hard way)
